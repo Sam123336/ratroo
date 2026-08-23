@@ -1,6 +1,9 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
 import { resolveNearbyMetroProvider } from "@/app/lib/nearby/metro-provider";
 
+export const dynamic = "force-dynamic";
+const NO_STORE = { "Cache-Control": "private, no-store, max-age=0" };
+
 type NearbyRoute = { id: string; name: string };
 
 function deepestData(value: unknown): unknown {
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
   const mode = (url.searchParams.get("mode") || "").toUpperCase();
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return Response.json({ message: "Valid coordinates are required." }, { status: 400 });
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return Response.json({ message: "Valid coordinates are required." }, { status: 400, headers: NO_STORE });
 
   const inBengaluru = lat >= 12.65 && lat <= 13.25 && lng >= 77.30 && lng <= 78.05;
   if (inBengaluru && (!mode || mode === "BUS" || mode === "METRO")) {
@@ -53,7 +56,7 @@ export async function GET(request: Request) {
     const [buses, metros] = await Promise.all([busPromise, metroPromise]);
     const data = [...buses, ...metros].sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 40);
     const radiusMeters = data.length ? Math.max(...data.map((stop) => stop.distanceMeters)) : 15000;
-    return Response.json({ data, radiusMeters, widened: radiusMeters > 1000, sources: [buses.length ? "Ratroo BMTC" : null, metros.length ? "OpenStreetMap BMRCL" : null].filter(Boolean) });
+    return Response.json({ data, radiusMeters, widened: radiusMeters > 1000, sources: [buses.length ? "Ratroo BMTC" : null, metros.length ? "OpenStreetMap BMRCL" : null].filter(Boolean) }, { headers: NO_STORE });
   }
 
   const collected = new Map<string, NonNullable<ReturnType<typeof normalize>>>();
@@ -71,12 +74,12 @@ export async function GET(request: Request) {
       for (const stop of filtered) collected.set(stop.id, stop);
       const values = [...collected.values()];
       if (mode && values.length) {
-        return Response.json({ data: values.slice(0, 40), radiusMeters: radius, widened: radius > 1000 });
+        return Response.json({ data: values.slice(0, 40), radiusMeters: radius, widened: radius > 1000 }, { headers: NO_STORE });
       }
       const hasBus = values.some((stop) => stop.category.startsWith("BUS"));
       const hasMetro = values.some((stop) => stop.category.startsWith("METRO"));
       if (hasBus && hasMetro) {
-        return Response.json({ data: values.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 40), radiusMeters: radius, widened: radius > 1000 });
+        return Response.json({ data: values.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 40), radiusMeters: radius, widened: radius > 1000 }, { headers: NO_STORE });
       }
     } catch {
       // Widen or return the honest empty state after the final attempt.
@@ -86,5 +89,5 @@ export async function GET(request: Request) {
     data: [...collected.values()].sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 40),
     radiusMeters: searchedRadius,
     widened: searchedRadius > 1000,
-  });
+  }, { headers: NO_STORE });
 }

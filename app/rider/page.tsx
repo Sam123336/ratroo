@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import StopMapPicker from "./StopMapPicker";
 
 type Vehicle = { id: string; registrationNumber: string; vehicleType: string; displayName?: string; reviewState: string; reviewNote?: string };
 type Stop = { stopName: string; latitude?: number; longitude?: number; departureTime?: string };
@@ -51,12 +52,7 @@ function StopSearchInput({ index, stop, label, placeholder, onChange, onSelect }
       return;
     }
     const query = stop.stopName.trim();
-    if (query.length < 2) {
-      setSuggestions([]);
-      setOpen(false);
-      setLoading(false);
-      return;
-    }
+    if (query.length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true);
@@ -110,7 +106,7 @@ function StopSearchInput({ index, stop, label, placeholder, onChange, onSelect }
   return (
     <label className="stop-search">
       <small>{label}</small>
-      <input value={stop.stopName} required minLength={2} onChange={event => onChange(event.target.value)} onFocus={() => stop.stopName.trim().length >= 2 && setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 120)} onKeyDown={handleKeyDown} placeholder={placeholder} autoComplete="off" aria-autocomplete="list" aria-expanded={open} aria-controls={listId} />
+      <input role="combobox" value={stop.stopName} required minLength={2} onChange={event => { const value = event.target.value; onChange(value); if (value.trim().length < 2) { setSuggestions([]); setOpen(false); setLoading(false); } }} onFocus={() => stop.stopName.trim().length >= 2 && setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 120)} onKeyDown={handleKeyDown} placeholder={placeholder} autoComplete="off" aria-autocomplete="list" aria-expanded={open} aria-controls={listId} />
       {open && <div className="stop-suggestions" id={listId} role="listbox">
         {loading && <div className="stop-suggestion-state">Searching Ratroo stops…</div>}
         {!loading && suggestions.length === 0 && <div className="stop-suggestion-state">No saved stop found. Keep this name and add a pin if you can.</div>}
@@ -131,6 +127,7 @@ export default function RiderPortal() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [stops, setStops] = useState<Stop[]>([{ stopName: "" }, { stopName: "" }]);
+  const [mapStopIndex, setMapStopIndex] = useState<number | null>(null);
 
   const completed = useMemo(() => [Boolean(operator), vehicles.length > 0, routes.length > 0, routes.some(route => route.publishState === "SUBMITTED" || route.publishState === "PUBLISHED")], [operator, vehicles, routes]);
 
@@ -187,19 +184,6 @@ export default function RiderPortal() {
     } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); }
   }
 
-  function locate(index: number) {
-    if (!navigator.geolocation) return setMessage("Location is not available on this phone.");
-    setMessage("Getting this stop's location…");
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        setStops(rows => rows.map((row, rowIndex) => rowIndex === index ? { ...row, latitude: position.coords.latitude, longitude: position.coords.longitude } : row));
-        setMessage("Location pin added.");
-      },
-      () => setMessage("Location permission was not given. You can still type the stop name."),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  }
-
   async function saveRoute(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
     try {
@@ -252,14 +236,15 @@ export default function RiderPortal() {
       </nav>
       {message && <div className="rider-notice">{message}</div>}
       <section className="rider-workspace">
-        <aside><p className="eyebrow">Why we ask</p><h2>{step === 1 ? "Help us know who runs the service." : step === 2 ? "Help riders identify the right vehicle." : step === 3 ? "Tell us the real path you drive every day." : "Nothing goes live without a human check."}</h2><p>{step === 3 ? "Type a stop and choose a suggestion to save its map location. Use My location only when you are physically at that stop." : "Your contact details are used for verification and are not shown publicly."}</p></aside>
+        <aside><p className="eyebrow">Why we ask</p><h2>{step === 1 ? "Help us know who runs the service." : step === 2 ? "Help riders identify the right vehicle." : step === 3 ? "Tell us the real path you drive every day." : "Nothing goes live without a human check."}</h2><p>{step === 3 ? "Choose a suggestion, then use the map to check or adjust the exact stop. You can do this from home." : "Your contact details are used for verification and are not shown publicly."}</p></aside>
         <div className="rider-form-card">
           {step === 1 && (operator ? <div className="saved-card"><span>✓</span><p><small>Operator profile</small><strong>{operator.name}</strong><em className={`state ${operator.status.toLowerCase()}`}>{operator.status === "VERIFIED" ? "Verified" : operator.status === "SUSPENDED" ? "Needs attention" : "Waiting for admin check"}</em>{operator.reviewNote && <q>{operator.reviewNote}</q>}</p><button onClick={() => setStep(2)}>Continue →</button></div> : <form onSubmit={saveOperator}><h2>Tell us about you</h2><label>Service or owner name<input name="name" required minLength={2} placeholder="Example: Maa Tara Bus Service" /></label><label>Phone number<input name="contactPhone" inputMode="tel" placeholder="+91 98765 43210" /></label><label>Contact email<input name="contactEmail" type="email" placeholder="Optional" /></label><button className="primary" disabled={busy}>Save and continue →</button></form>)}
           {step === 2 && <><form onSubmit={saveVehicle}><h2>Add a vehicle</h2><fieldset><legend>What do you drive?</legend><div className="vehicle-choices">{[["BUS","Bus"],["MINIBUS","Mini bus"],["AUTO","Auto"],["E_RICKSHAW","E-rickshaw"],["SHARED_TAXI","Shared taxi"]].map(([value,label]) => <label key={value}><input type="radio" name="vehicleType" value={value} required /><span>{label === "Bus" ? "▰" : "●"}</span><b>{label}</b></label>)}</div></fieldset><label>Registration number<input name="registrationNumber" required minLength={4} placeholder="WB 04 AB 1234" /></label><div className="two"><label>Name painted on vehicle<input name="displayName" placeholder="Optional" /></label><label>Seats<input name="seatCapacity" type="number" min={1} max={200} inputMode="numeric" placeholder="Optional" /></label></div><button className="primary" disabled={busy}>Add this vehicle →</button></form>{vehicles.length > 0 && <div className="mini-list"><h3>Saved vehicles</h3>{vehicles.map(vehicle => <div key={vehicle.id}><b>{vehicle.displayName || vehicle.registrationNumber}</b><span>{vehicle.vehicleType.replaceAll("_", " ")} · {vehicle.reviewState === "APPROVED" ? "Approved" : "Waiting for check"}</span></div>)}</div>}</>}
-          {step === 3 && <form onSubmit={saveRoute}><h2>Add the stops you serve</h2><label>Route name<input name="name" required minLength={3} placeholder="Example: Garia to Baruipur" /></label><div className="two"><label>Vehicle type<select name="vehicleType" required defaultValue={vehicles[0]?.vehicleType || "BUS"}>{["BUS","MINIBUS","AUTO","E_RICKSHAW","SHARED_TAXI"].map(value => <option key={value}>{value}</option>)}</select></label><label>Use vehicle<select name="vehicleId" defaultValue={vehicles[0]?.id || ""}><option value="">No fixed vehicle</option>{vehicles.map(vehicle => <option value={vehicle.id} key={vehicle.id}>{vehicle.registrationNumber}</option>)}</select></label></div><div className="stops-editor"><div className="stops-title"><h3>Stops in driving order</h3><span>{stops.length} stops</span></div>{stops.map((stop,index) => <div className="stop-row" key={index}><span>{index + 1}</span><StopSearchInput index={index} stop={stop} label={index === 0 ? "Starting stand / stop" : index === stops.length - 1 ? "Last stop" : "Next stop"} placeholder={index === 0 ? "Search where you normally start" : "Search stop name"} onChange={value => setStops(rows => rows.map((row,rowIndex) => rowIndex === index ? { ...row, stopName: value, latitude: undefined, longitude: undefined } : row))} onSelect={suggestion => { setStops(rows => rows.map((row,rowIndex) => rowIndex === index ? { ...row, stopName: suggestion.name, latitude: suggestion.latitude, longitude: suggestion.longitude } : row)); setMessage(suggestion.latitude != null && suggestion.longitude != null ? `${suggestion.name} selected with its map location.` : `${suggestion.name} selected. Add a pin if you can.`); }} /><button type="button" className={stop.latitude ? "located" : "pin"} onClick={() => locate(index)} title="Use your current location for this stop">{stop.latitude ? "✓ Located" : "⌖ My location"}</button>{stops.length > 2 && <button type="button" className="remove" onClick={() => setStops(rows => rows.filter((_,rowIndex) => rowIndex !== index))}>×</button>}</div>)}<button type="button" className="add-stop" onClick={() => setStops(rows => [...rows, { stopName: "" }])}>＋ Add another stop</button></div><div className="two"><label>Full route fare (₹)<input name="fareINR" type="number" min={0} inputMode="numeric" placeholder="Optional" /></label><label>Extra note<input name="notes" placeholder="Example: Every 30 minutes" /></label></div><button className="primary" disabled={busy}>Save this route →</button></form>}
+          {step === 3 && <form onSubmit={saveRoute}><h2>Add the stops you serve</h2><label>Route name<input name="name" required minLength={3} placeholder="Example: Garia to Baruipur" /></label><div className="two"><label>Vehicle type<select name="vehicleType" required defaultValue={vehicles[0]?.vehicleType || "BUS"}>{["BUS","MINIBUS","AUTO","E_RICKSHAW","SHARED_TAXI"].map(value => <option key={value}>{value}</option>)}</select></label><label>Use vehicle<select name="vehicleId" defaultValue={vehicles[0]?.id || ""}><option value="">No fixed vehicle</option>{vehicles.map(vehicle => <option value={vehicle.id} key={vehicle.id}>{vehicle.registrationNumber}</option>)}</select></label></div><div className="stops-editor"><div className="stops-title"><h3>Stops in driving order</h3><span>{stops.length} stops</span></div>{stops.map((stop,index) => <div className="stop-row" key={index}><span>{index + 1}</span><StopSearchInput index={index} stop={stop} label={index === 0 ? "Starting stand / stop" : index === stops.length - 1 ? "Last stop" : "Next stop"} placeholder={index === 0 ? "Search where you normally start" : "Search stop name"} onChange={value => setStops(rows => rows.map((row,rowIndex) => rowIndex === index ? { ...row, stopName: value, latitude: undefined, longitude: undefined } : row))} onSelect={suggestion => { setStops(rows => rows.map((row,rowIndex) => rowIndex === index ? { ...row, stopName: suggestion.name, latitude: suggestion.latitude, longitude: suggestion.longitude } : row)); setMessage(suggestion.latitude != null && suggestion.longitude != null ? `${suggestion.name} selected. Check the pin on the map if needed.` : `${suggestion.name} selected. Choose its exact point on the map.`); }} /><button type="button" className={stop.latitude ? "located" : "pin"} onClick={() => setMapStopIndex(index)} title="Choose this stop on the map">{stop.latitude ? "✓ Map" : "⌖ Map"}</button>{stops.length > 2 && <button type="button" className="remove" onClick={() => setStops(rows => rows.filter((_,rowIndex) => rowIndex !== index))}>×</button>}</div>)}<button type="button" className="add-stop" onClick={() => setStops(rows => [...rows, { stopName: "" }])}>＋ Add another stop</button></div><div className="two"><label>Full route fare (₹)<input name="fareINR" type="number" min={0} inputMode="numeric" placeholder="Optional" /></label><label>Extra note<input name="notes" placeholder="Example: Every 30 minutes" /></label></div><button className="primary" disabled={busy}>Save this route →</button></form>}
           {step === 4 && <div><h2>Check and send</h2><p className="review-explainer">Ratroo checks the owner, vehicle, stops and service. Only approved routes become visible in the journey planner.</p>{routes.length === 0 ? <div className="empty">No route saved yet.<button onClick={() => setStep(3)}>Add your first route</button></div> : <div className="route-list">{routes.map(route => { const copy = statusCopy[route.publishState] || [route.publishState, ""]; return <article key={route.id}><div><span className={`route-state ${route.publishState.toLowerCase()}`}>{copy[0]}</span><h3>{route.name}</h3><p>{route.stops?.map(stop => stop.stopName).join(" → ")}</p><small>{copy[1]}</small>{route.reviewNote && <q>Admin note: {route.reviewNote}</q>}</div>{["DRAFT","NEEDS_CHANGES","WITHDRAWN"].includes(route.publishState) && <button className="primary compact" disabled={busy} onClick={() => submitRoute(route.id)}>Send for checking →</button>}</article>})}</div>}</div>}
         </div>
       </section>
+      {mapStopIndex != null && stops[mapStopIndex] && <StopMapPicker stopName={stops[mapStopIndex].stopName} latitude={stops[mapStopIndex].latitude} longitude={stops[mapStopIndex].longitude} onClose={() => setMapStopIndex(null)} onConfirm={coordinates => { const selectedStop = stops[mapStopIndex]; setStops(rows => rows.map((row, rowIndex) => rowIndex === mapStopIndex ? { ...row, ...coordinates } : row)); setMapStopIndex(null); setMessage(`${selectedStop.stopName || "Stop"} pinned on the map.`); }} />}
       <footer><b>Ratroo Rider</b><span>Built for the people who keep our cities moving.</span><a href="/">Open public journey planner ↗</a></footer>
     </main>
   );

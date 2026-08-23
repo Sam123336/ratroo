@@ -38,12 +38,30 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
   const [pitched, setPitched] = useState(true);
+  const [routeOverlay, setRouteOverlay] = useState<{ points: string; start: [number, number]; end: [number, number] } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://tiles.openfreemap.org/styles/liberty",
+      // Define the OSM raster in the initial style so it is requested by the
+      // map worker immediately. Loading a remote style first left some WebView
+      // environments with only the style background and no drawable layers.
+      style: {
+        version: 8,
+        sources: {
+          "ratroo-osm": {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            attribution: "© OpenStreetMap contributors",
+          },
+        },
+        layers: [
+          { id: "ratroo-map-background", type: "background", paint: { "background-color": "#eee9df" } },
+          { id: "ratroo-osm", type: "raster", source: "ratroo-osm", paint: { "raster-opacity": 1 } },
+        ],
+      },
       center: [longitude, latitude],
       zoom: 13.2,
       pitch: 48,
@@ -57,22 +75,6 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
       if (initialized || !map.isStyleLoaded()) return;
       initialized = true;
 
-      // Keep a standard OSM raster underneath the vector style. This makes the
-      // street map resilient when a browser blocks one of OpenFreeMap's vector
-      // tile subdomains; vector labels and 3D buildings still render above it.
-      if (!map.getSource("ratroo-osm-base")) {
-        map.addSource("ratroo-osm-base", {
-          type: "raster",
-          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-          tileSize: 256,
-          attribution: "© OpenStreetMap contributors",
-        });
-        map.addLayer(
-          { id: "ratroo-osm-base", type: "raster", source: "ratroo-osm-base", paint: { "raster-opacity": 1 } },
-          map.getStyle().layers?.find((layer) => layer.type !== "background")?.id,
-        );
-      }
-
       if (!map.getSource("ratroo-user")) map.addSource("ratroo-user", { type: "geojson", data: emptyCollection });
       map.addLayer({ id: "ratroo-user-halo", type: "circle", source: "ratroo-user", paint: { "circle-radius": 13, "circle-color": "#ff942f", "circle-opacity": 0.22 } });
       map.addLayer({ id: "ratroo-user", type: "circle", source: "ratroo-user", paint: { "circle-radius": 6, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
@@ -83,15 +85,6 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
       map.addLayer({ id: "ratroo-route", type: "line", source: "ratroo-route", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#f36d00", "line-width": 5, "line-opacity": 0.95 } });
       map.addLayer({ id: "ratroo-route-stops", type: "circle", source: "ratroo-route", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
 
-      try {
-        const firstLabel = map.getStyle().layers?.find((layer) => layer.type === "symbol")?.id;
-        map.addLayer({
-          id: "ratroo-3d-buildings", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
-          paint: { "fill-extrusion-color": "#d8cdb9", "fill-extrusion-height": ["coalesce", ["get", "render_height"], ["get", "height"], 8], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0], "fill-extrusion-opacity": 0.68 },
-        }, firstLabel);
-      } catch {
-        // The 3D camera still works if a tile style omits building heights.
-      }
       setReady(true);
     };
     const revealTimer = window.setTimeout(() => {
@@ -146,11 +139,30 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
       ...validStops.map((stop) => ({ type: "Feature" as const, properties: { name: stop.name }, geometry: { type: "Point" as const, coordinates: [stop.longitude, stop.latitude] } })),
     ] : [];
     (map.getSource("ratroo-route") as GeoJSONSource)?.setData({ type: "FeatureCollection", features });
+    const updateRouteOverlay = () => {
+      if (validStops.length < 2) {
+        setRouteOverlay(null);
+        return;
+      }
+      const projected = validStops.map((stop) => map.project([stop.longitude, stop.latitude]));
+      setRouteOverlay({
+        points: projected.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" "),
+        start: [projected[0].x, projected[0].y],
+        end: [projected[projected.length - 1].x, projected[projected.length - 1].y],
+      });
+    };
+    map.on("move", updateRouteOverlay);
+    map.on("resize", updateRouteOverlay);
     const points = validStops.length > 1 ? validStops : nearby.slice(0, 20);
     if (points.length) {
       const bounds = points.reduce((box, point) => box.extend([point.longitude, point.latitude]), new maplibregl.LngLatBounds([longitude, latitude], [longitude, latitude]));
       map.fitBounds(bounds, { padding: 64, maxZoom: 15, duration: 900, pitch: pitched ? 48 : 0 });
     }
+    updateRouteOverlay();
+    return () => {
+      map.off("move", updateRouteOverlay);
+      map.off("resize", updateRouteOverlay);
+    };
   }, [ready, route, nearby, latitude, longitude, pitched]);
 
   function toggle3d() {
@@ -162,6 +174,12 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
   return (
     <div className="transit-map-shell">
       <div ref={containerRef} className="transit-map" aria-label="Interactive OpenStreetMap showing nearby transit and selected routes" />
+      {routeOverlay && <svg className="map-route-overlay" aria-hidden="true">
+        <polyline className="map-route-overlay-shadow" points={routeOverlay.points} />
+        <polyline className="map-route-overlay-line" points={routeOverlay.points} />
+        <circle className="map-route-overlay-stop" cx={routeOverlay.start[0]} cy={routeOverlay.start[1]} r="7" />
+        <circle className="map-route-overlay-stop" cx={routeOverlay.end[0]} cy={routeOverlay.end[1]} r="7" />
+      </svg>}
       <div className="map-toolbar"><button type="button" onClick={toggle3d} aria-pressed={pitched}>{pitched ? "2D view" : "3D view"}</button><span>OSM · live Ratroo data</span></div>
       {!ready && <div className="map-loading"><span className="mini-spinner" /> Loading the local network…</div>}
     </div>

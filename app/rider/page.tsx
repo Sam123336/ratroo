@@ -66,7 +66,10 @@ export default function RiderPortal() {
     const values = Object.fromEntries(new FormData(event.currentTarget));
     try {
       const response = await fetch("/api/rider/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: authMode, ...values }) });
-      const payload = await response.json();
+      const text = await response.text();
+      let payload: { message?: string } = {};
+      try { payload = text ? JSON.parse(text) : {}; }
+      catch { payload = { message: "Ratroo returned an invalid response. Please refresh and try again." }; }
       if (!response.ok) throw new Error(payload.message || "Could not continue.");
       await load();
     } catch (error) { setMessage((error as Error).message); }

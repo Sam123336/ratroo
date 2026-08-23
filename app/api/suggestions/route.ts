@@ -45,6 +45,22 @@ const curated: Record<CityRegion, Suggestion[]> = {
   ],
 };
 
+/**
+ * Categories that name a service rather than a place.
+ *
+ * Every caller of this endpoint is choosing somewhere — a journey endpoint, a
+ * stop to pin on the map, a stop to add to a route — and none of them can use a
+ * bus. Offering one produced a destination the journey planner then could not
+ * resolve, and blamed on its own graph: "WB-25B1015 — ADDYA SHAKTI … was not
+ * found in the canonical graph database". You cannot travel to a bus.
+ *
+ * Filtered here rather than in each caller, and before the limit is applied, so
+ * a search still returns ten usable places instead of ten minus the services.
+ */
+const SERVICE_CATEGORIES = new Set(["BUS_NUMBER", "BUS_NAME", "ROUTE_NUMBER", "OPERATOR"]);
+
+const isPlace = (suggestion: Suggestion) => !SERVICE_CATEGORIES.has(suggestion.type);
+
 function unwrapArray(payload: unknown): unknown[] {
   let current = payload;
   for (let index = 0; index < 3; index += 1) {
@@ -93,7 +109,10 @@ async function fetchBackendMatches(endpoint: string, signal: AbortSignal, region
   try {
     const response = await fetch(endpoint, { headers: { "Accept": "application/json" }, signal });
     if (!response.ok) return [];
-    return unwrapArray(await response.json()).map((item, index) => normalize(item, index, region)).filter((item): item is Suggestion => item !== null);
+    return unwrapArray(await response.json())
+      .map((item, index) => normalize(item, index, region))
+      .filter((item): item is Suggestion => item !== null)
+      .filter(isPlace);
   } catch {
     return [];
   }

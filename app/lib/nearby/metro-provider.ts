@@ -36,7 +36,7 @@ class OpenStreetMapMetroProvider implements NearbyMetroProvider {
     // Fetch a fixed public city dataset, never a radius around the user's
     // coordinates. Distance is calculated locally so Overpass does not receive
     // anyone's location.
-    const query = `[out:json][timeout:15];area["name"="Bengaluru"]["boundary"="administrative"]->.city;(nwr(area.city)["railway"="station"]["station"="subway"];nwr(area.city)["public_transport"="station"]["subway"="yes"];);out center tags;`;
+    const query = `[out:json][timeout:15];(nwr["railway"="station"]["station"="subway"](12.65,77.30,13.25,78.05);nwr["public_transport"="station"]["subway"="yes"](12.65,77.30,13.25,78.05););out center tags;`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 9_000);
     try {

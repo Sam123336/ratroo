@@ -1,4 +1,5 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
+import { resolveReverseGeocoder } from "@/app/lib/maps/server/reverse-geocoder";
 
 type SupportedRegion = "kolkata" | "bengaluru" | "unsupported";
 
@@ -9,14 +10,6 @@ function deepestData(value: unknown): unknown {
     else break;
   }
   return current;
-}
-
-function compactAddress(address: Record<string, string> | undefined, fallback: string) {
-  if (!address) return fallback;
-  const locality = address.suburb || address.neighbourhood || address.road || address.village;
-  const city = address.city || address.town || address.municipality || address.county;
-  const parts = [locality, city, address.state].filter(Boolean);
-  return Array.from(new Set(parts)).join(", ") || fallback;
 }
 
 function regionFromState(stateCode: string | null): SupportedRegion {
@@ -45,15 +38,7 @@ export async function GET(request: Request) {
     fetch(`${ratrooApiUrl()}/coverage/summary?${new URLSearchParams({ lat: String(lat), lng: String(lng) })}`, {
       headers: { "Accept": "application/json" },
     }),
-    (async () => {
-      const endpoint = new URL("https://nominatim.openstreetmap.org/reverse");
-      endpoint.search = new URLSearchParams({
-        format: "jsonv2", lat: String(lat), lon: String(lng), zoom: "16", addressdetails: "1", "accept-language": "en",
-      }).toString();
-      return fetch(endpoint, {
-        headers: { "Accept": "application/json", "User-Agent": "RatrooTransit/1.0 (https://ratroo-transit.sambitghosh56.chatgpt.site)" },
-      });
-    })(),
+    resolveReverseGeocoder().reverse(lat, lng),
   ]);
 
   if (coverageResult.status === "fulfilled" && coverageResult.value.ok) {
@@ -67,9 +52,8 @@ export async function GET(request: Request) {
     stopCount = Number(coverage?.stopCount || 0);
   }
 
-  if (addressResult.status === "fulfilled" && addressResult.value.ok) {
-    const place = await addressResult.value.json() as { display_name?: string; address?: Record<string, string> };
-    address = compactAddress(place.address, place.display_name || address);
+  if (addressResult.status === "fulfilled" && addressResult.value) {
+    address = addressResult.value.address;
   }
 
   const region = regionFromState(stateCode);

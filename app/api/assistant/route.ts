@@ -33,7 +33,7 @@ function unwrap(value: unknown) {
 }
 
 const BENGALURU_TERMS = /\b(bengaluru|bangalore|karnataka|whitefield|kasavanahalli|majestic|indiranagar|koramangala|electronic city|kempegowda)\b/i;
-const WEST_BENGAL_ONLY = /(only (?:cover|covers|support|supports).*west bengal|tools? (?:available|provided).*west bengal|karnataka.*(?:not|isn't|is not).*cover)/i;
+const WEST_BENGAL_ONLY = /(only (?:cover|covers|support|supports).*west bengal|tools?[\s\S]{0,160}(?:only|limited)[\s\S]{0,80}west bengal|west bengal[\s\S]{0,80}only|karnataka.*(?:not|isn't|is not).*cover)/i;
 
 function isBengaluruRequest(question: string, lat?: number, lng?: number) {
   const inBengaluru = lat !== undefined && lng !== undefined

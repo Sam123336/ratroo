@@ -100,10 +100,7 @@ function localMatches(region: Region, query: string) {
     .map((item) => ({ ...item, region: region === "all" ? (curated.kolkata.includes(item) ? "kolkata" : "bengaluru") : region }));
 }
 
-async function backendMatches(region: CityRegion, query: string) {
-  const endpoint = region === "bengaluru"
-    ? `${RATROO_API}/regions/bengaluru/search?${new URLSearchParams({ q: query, limit: "12" })}`
-    : `${RATROO_API}/search?${new URLSearchParams({ q: query })}`;
+async function fetchBackendMatches(endpoint: string, region?: CityRegion) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
   try {
@@ -115,6 +112,23 @@ async function backendMatches(region: CityRegion, query: string) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function backendMatches(region: CityRegion, query: string) {
+  const params = new URLSearchParams({ q: query, limit: "12" });
+  if (region !== "bengaluru") {
+    return fetchBackendMatches(`${RATROO_API}/search?${params}`, region);
+  }
+
+  // The regional index is intentionally narrower than the canonical search
+  // index and may return a successful empty response for real BMTC stops.
+  // An empty result is therefore not authoritative: fall back to the general
+  // index and retain only results whose coordinates place them in Bengaluru.
+  const regional = await fetchBackendMatches(`${RATROO_API}/regions/bengaluru/search?${params}`, region);
+  if (regional.length) return regional;
+
+  const canonical = await fetchBackendMatches(`${RATROO_API}/search?${params}`);
+  return canonical.filter((item) => item.region === "bengaluru");
 }
 
 export async function GET(request: Request) {

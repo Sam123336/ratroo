@@ -35,6 +35,26 @@ type Journey = {
   confidenceBadges: string[];
 };
 
+/**
+ * Show the city picker, or leave coverage entirely to the backend polygon.
+ *
+ * Set to false and the picker disappears: location is detected from GPS alone,
+ * which is the original behaviour. Set to true and someone can name their city
+ * instead — useful when location permission is refused, and the error copy
+ * already told people to "choose Kolkata or Bengaluru" long before there was
+ * anything to choose.
+ *
+ * A picked city still resolves through /api/location, so this changes which
+ * point gets looked up, never what coverage is claimed for it.
+ */
+const REGION_PICKER_ENABLED = true;
+
+/** Where a named city is looked up from. Coverage still comes from the backend. */
+const SELECTABLE_CITIES = [
+  { region: "kolkata", label: "Kolkata", latitude: 22.5726, longitude: 88.3639 },
+  { region: "bengaluru", label: "Bengaluru", latitude: 12.9716, longitude: 77.5946 },
+] as const;
+
 type SupportedRegion = "kolkata" | "bengaluru";
 type LocationState = {
   region: SupportedRegion | "unsupported";
@@ -353,6 +373,49 @@ export default function Home() {
     return () => controller.abort();
   }, [location]);
 
+  /**
+   * Resolve a point through the coverage service, whether it came from GPS or
+   * from someone naming their city.
+   *
+   * A picked city goes through the same backend lookup rather than carrying a
+   * hardcoded region and mode list: coverage, stop counts and available modes
+   * stay the polygon's answer, so choosing "Kolkata" can never assert coverage
+   * the backend would not.
+   */
+  async function resolveLocation(latitude: number, longitude: number, source: "gps" | "origin") {
+    const params = new URLSearchParams({ lat: String(latitude), lng: String(longitude) });
+    const response = await fetch(`/api/location?${params}`);
+    const data = await response.json() as LocationState & { message?: string };
+    if (!response.ok) throw new Error(data.message || "We could not resolve this location.");
+
+    setLocation({ ...data, source });
+    setFrom(data.address);
+    setSelectedFrom(null);
+    setSelectedTo(null);
+    setReachable([]);
+    setMappedRoute(null);
+    setJourney(null);
+    setLocationStatus("idle");
+
+    if (data.region === "unsupported") {
+      setStatus("error");
+      setMessage("Ratroo currently plans journeys in Kolkata and Bengaluru.");
+    } else {
+      setStatus("idle");
+    }
+  }
+
+  async function chooseCity(city: (typeof SELECTABLE_CITIES)[number]) {
+    setLocationStatus("loading");
+    setMessage("");
+    try {
+      await resolveLocation(city.latitude, city.longitude, "origin");
+    } catch (error) {
+      setLocationStatus("error");
+      setMessage(error instanceof Error ? error.message : `We could not load ${city.label}.`);
+    }
+  }
+
   function useMyLocation() {
     if (!navigator.geolocation) {
       setLocationStatus("error");
@@ -547,6 +610,22 @@ export default function Home() {
               <span className="location-pulse" /> {locationStatus === "loading" ? "Finding your location…" : "Use my current location"}
             </button>
             <span className="auto-coverage">Coverage is detected automatically from the backend polygon</span>
+            {REGION_PICKER_ENABLED && (
+              <div className="city-switch" role="group" aria-label="Choose a city">
+                {SELECTABLE_CITIES.map((city) => (
+                  <button
+                    type="button"
+                    key={city.region}
+                    className={location?.region === city.region ? "active" : ""}
+                    aria-pressed={location?.region === city.region}
+                    disabled={locationStatus === "loading"}
+                    onClick={() => chooseCity(city)}
+                  >
+                    {city.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {location && <div className={`location-result ${location.region}`} data-hero-reveal><span>●</span><div><small>{location.region === "unsupported" ? "LOCATION · NOT COVERED YET" : `${location.source === "origin" ? "SELECTED ORIGIN" : "CURRENT LOCATION"} · ${location.name.toUpperCase()}`}</small><strong>{location.address}</strong></div></div>}
           <form className="planner-card" id="plan" onSubmit={planJourney} data-hero-reveal>

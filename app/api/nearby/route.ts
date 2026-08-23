@@ -1,4 +1,5 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
+import { resolveNearbyMetroProvider } from "@/app/lib/nearby/metro-provider";
 
 type NearbyRoute = { id: string; name: string };
 
@@ -34,6 +35,26 @@ export async function GET(request: Request) {
   const lng = Number(url.searchParams.get("lng"));
   const mode = (url.searchParams.get("mode") || "").toUpperCase();
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return Response.json({ message: "Valid coordinates are required." }, { status: 400 });
+
+  const inBengaluru = lat >= 12.65 && lat <= 13.25 && lng >= 77.30 && lng <= 78.05;
+  if (inBengaluru && (!mode || mode === "BUS" || mode === "METRO")) {
+    const busPromise = mode === "METRO" ? Promise.resolve([]) : fetch(`${ratrooApiUrl()}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: "5000" })}`, {
+      headers: { Accept: "application/json" },
+    }).then(async (response) => {
+      if (!response.ok) return [];
+      const raw = deepestData(await response.json());
+      return (Array.isArray(raw) ? raw : []).map(normalize).filter((stop): stop is NonNullable<ReturnType<typeof normalize>> =>
+        stop !== null && stop.category.startsWith("BUS") && stop.provider.includes("BMTC"),
+      );
+    }).catch(() => []);
+    const metroPromise = mode === "BUS"
+      ? Promise.resolve([])
+      : resolveNearbyMetroProvider().findNearby(lat, lng, 15000);
+    const [buses, metros] = await Promise.all([busPromise, metroPromise]);
+    const data = [...buses, ...metros].sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, 40);
+    const radiusMeters = data.length ? Math.max(...data.map((stop) => stop.distanceMeters)) : 15000;
+    return Response.json({ data, radiusMeters, widened: radiusMeters > 1000, sources: [buses.length ? "Ratroo BMTC" : null, metros.length ? "OpenStreetMap BMRCL" : null].filter(Boolean) });
+  }
 
   const collected = new Map<string, NonNullable<ReturnType<typeof normalize>>>();
   let searchedRadius = 1000;

@@ -52,13 +52,33 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
-    map.on("load", () => {
-      map.addSource("ratroo-user", { type: "geojson", data: emptyCollection });
+    let initialized = false;
+    const initializeTransitLayers = () => {
+      if (initialized || !map.isStyleLoaded()) return;
+      initialized = true;
+
+      // Keep a standard OSM raster underneath the vector style. This makes the
+      // street map resilient when a browser blocks one of OpenFreeMap's vector
+      // tile subdomains; vector labels and 3D buildings still render above it.
+      if (!map.getSource("ratroo-osm-base")) {
+        map.addSource("ratroo-osm-base", {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap contributors",
+        });
+        map.addLayer(
+          { id: "ratroo-osm-base", type: "raster", source: "ratroo-osm-base", paint: { "raster-opacity": 1 } },
+          map.getStyle().layers?.find((layer) => layer.type !== "background")?.id,
+        );
+      }
+
+      if (!map.getSource("ratroo-user")) map.addSource("ratroo-user", { type: "geojson", data: emptyCollection });
       map.addLayer({ id: "ratroo-user-halo", type: "circle", source: "ratroo-user", paint: { "circle-radius": 13, "circle-color": "#ff942f", "circle-opacity": 0.22 } });
       map.addLayer({ id: "ratroo-user", type: "circle", source: "ratroo-user", paint: { "circle-radius": 6, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
-      map.addSource("ratroo-nearby", { type: "geojson", data: emptyCollection });
+      if (!map.getSource("ratroo-nearby")) map.addSource("ratroo-nearby", { type: "geojson", data: emptyCollection });
       map.addLayer({ id: "ratroo-nearby", type: "circle", source: "ratroo-nearby", paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 4, 16, 8], "circle-color": "#165c49", "circle-stroke-color": "#fffaf1", "circle-stroke-width": 2 } });
-      map.addSource("ratroo-route", { type: "geojson", data: emptyCollection });
+      if (!map.getSource("ratroo-route")) map.addSource("ratroo-route", { type: "geojson", data: emptyCollection });
       map.addLayer({ id: "ratroo-route-shadow", type: "line", source: "ratroo-route", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#fffaf1", "line-width": 9, "line-opacity": 0.78 } });
       map.addLayer({ id: "ratroo-route", type: "line", source: "ratroo-route", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#f36d00", "line-width": 5, "line-opacity": 0.95 } });
       map.addLayer({ id: "ratroo-route-stops", type: "circle", source: "ratroo-route", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
@@ -73,7 +93,16 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
         // The 3D camera still works if a tile style omits building heights.
       }
       setReady(true);
-    });
+    };
+    const revealTimer = window.setTimeout(() => {
+      initializeTransitLayers();
+      // Keep the usable OSM base map visible even if a style omits a custom layer dependency.
+      setReady(true);
+    }, 4000);
+    map.on("load", initializeTransitLayers);
+    map.on("style.load", initializeTransitLayers);
+    map.on("styledata", initializeTransitLayers);
+    map.on("idle", initializeTransitLayers);
     map.on("click", "ratroo-nearby", (event) => {
       const feature = event.features?.[0];
       if (!feature || feature.geometry.type !== "Point") return;
@@ -89,7 +118,7 @@ export default function TransitMap({ latitude, longitude, address, nearby, route
     map.on("mouseenter", "ratroo-nearby", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "ratroo-nearby", () => { map.getCanvas().style.cursor = ""; });
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { window.clearTimeout(revealTimer); map.remove(); mapRef.current = null; };
   }, [latitude, longitude]);
 
   useEffect(() => {

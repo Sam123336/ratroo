@@ -13,6 +13,8 @@ type Suggestion = {
   providerCode: string;
   subtitle: string;
   region?: CityRegion;
+  latitude?: number;
+  longitude?: number;
 };
 
 const curated: Record<CityRegion, Suggestion[]> = {
@@ -84,6 +86,8 @@ function normalize(item: unknown, index: number, region?: CityRegion): Suggestio
     providerCode: String(value.providerCode || "RATROO"),
     subtitle,
     region: regionForResult(value, region),
+    latitude: Number.isFinite(Number(value.latitude ?? value.lat)) ? Number(value.latitude ?? value.lat) : undefined,
+    longitude: Number.isFinite(Number(value.longitude ?? value.lng ?? value.lon)) ? Number(value.longitude ?? value.lng ?? value.lon) : undefined,
   };
 }
 

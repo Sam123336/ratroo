@@ -45,6 +45,7 @@ type LocationState = {
   routeCount?: number;
   stopCount?: number;
   coverageMethod?: string;
+  source?: "gps" | "origin";
 };
 
 type Suggestion = {
@@ -55,6 +56,8 @@ type Suggestion = {
   providerCode: string;
   subtitle: string;
   region?: SupportedRegion;
+  latitude?: number;
+  longitude?: number;
 };
 
 type NetworkItem = { id: string; title: string; subtitle: string };
@@ -302,7 +305,7 @@ export default function Home() {
         const response = await fetch(`/api/location?${params}`);
         const data = await response.json() as LocationState & { message?: string };
         if (!response.ok) throw new Error(data.message || "We could not resolve this location.");
-        setLocation(data);
+        setLocation({ ...data, source: "gps" });
         setFrom(data.address);
         setSelectedFrom(null);
         setSelectedTo(null);
@@ -326,6 +329,52 @@ export default function Home() {
         ? "Location permission was not allowed. Choose Kolkata or Bengaluru instead."
         : "Your location is unavailable right now. Choose your city instead.");
     }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+  }
+
+  function editOrigin(value: string) {
+    setFrom(value);
+    setSelectedFrom(null);
+    setSelectedTo(null);
+    setReachable([]);
+    setJourney(null);
+    setStatus("idle");
+    setMessage("");
+    if (location?.source === "origin") {
+      setLocation(null);
+      setNearby([]);
+      setMappedRoute(null);
+    }
+  }
+
+  async function selectOrigin(suggestion: Suggestion) {
+    setFrom(suggestion.name);
+    setSelectedFrom(suggestion);
+    setSelectedTo(null);
+    setTo("");
+    setJourney(null);
+    setStatus("idle");
+    setMessage("");
+    if (!suggestion.region || suggestion.latitude == null || suggestion.longitude == null) return;
+
+    const fallback: LocationState = {
+      region: suggestion.region,
+      name: suggestion.region === "bengaluru" ? "Bengaluru" : "West Bengal",
+      address: suggestion.name,
+      latitude: suggestion.latitude,
+      longitude: suggestion.longitude,
+      modes: suggestion.region === "bengaluru" ? ["BUS", "METRO"] : ["BUS", "METRO", "FERRY", "TRAM", "RAIL"],
+      source: "origin",
+    };
+    setLocation(fallback);
+    setLocationStatus("loading");
+    try {
+      const params = new URLSearchParams({ lat: String(suggestion.latitude), lng: String(suggestion.longitude) });
+      const response = await fetch(`/api/location?${params}`);
+      const data = await response.json() as LocationState;
+      if (response.ok) setLocation({ ...fallback, ...data, source: "origin" });
+    } finally {
+      setLocationStatus("idle");
+    }
   }
 
   async function loadNetwork(mode: string) {
@@ -436,15 +485,15 @@ export default function Home() {
             </button>
             <span className="auto-coverage">Coverage is detected automatically from the backend polygon</span>
           </div>
-          {location && <div className={`location-result ${location.region}`} data-hero-reveal><span>●</span><div><small>{location.region === "unsupported" ? "CURRENT LOCATION · NOT COVERED YET" : `CURRENT LOCATION · ${location.name.toUpperCase()}`}</small><strong>{location.address}</strong></div></div>}
+          {location && <div className={`location-result ${location.region}`} data-hero-reveal><span>●</span><div><small>{location.region === "unsupported" ? "LOCATION · NOT COVERED YET" : `${location.source === "origin" ? "SELECTED ORIGIN" : "CURRENT LOCATION"} · ${location.name.toUpperCase()}`}</small><strong>{location.address}</strong></div></div>}
           <form className="planner-card" id="plan" onSubmit={planJourney} data-hero-reveal>
             <div className="planner-row">
               <SuggestionInput
                 field="FROM"
                 value={from}
                 region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
-                onChange={(value) => { setFrom(value); setSelectedFrom(null); setSelectedTo(null); setReachable([]); setJourney(null); setStatus("idle"); setMessage(""); }}
-                onSelect={(suggestion) => { setFrom(suggestion.name); setSelectedFrom(suggestion); setSelectedTo(null); setTo(""); setJourney(null); setStatus("idle"); setMessage(""); }}
+                onChange={editOrigin}
+                onSelect={(suggestion) => { void selectOrigin(suggestion); }}
                 placeholder={location?.region === "bengaluru" ? "Majestic" : "Esplanade, Kolkata"}
               />
               <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); setSelectedFrom(null); setSelectedTo(null); setReachable([]); }}>↕</button>

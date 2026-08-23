@@ -9,11 +9,67 @@ import { openMapConfig } from "./config";
 
 const emptyCollection = { type: "FeatureCollection" as const, features: [] };
 
+/** Where the vector tiles start carrying buildings, matching the provider's own style. */
+const BUILDING_MIN_ZOOM = 14;
+
+/**
+ * Give the map real depth, not just a tilted photograph.
+ *
+ * The base map is raster OSM, which is a picture: pitching it leans the image
+ * over but nothing in it stands up. Extruded buildings need vector tiles, and
+ * `openMapConfig` already names a style and the id of its vector source — both
+ * were configured and then never read, because the style is defined inline here
+ * to keep some WebViews from rendering an empty background.
+ *
+ * So the source is lifted out of that style at runtime rather than pinned to a
+ * URL here: whatever provider the config names stays the single place it is
+ * set. If the style cannot be fetched or names no such source, the map keeps
+ * working and simply has no buildings — a flat map beats a broken one.
+ */
+async function addBuildingLayer(map: MapLibreMap, visible: boolean) {
+  const response = await fetch(openMapConfig.styleUrl);
+  if (!response.ok) return;
+
+  const style = (await response.json()) as { sources?: Record<string, unknown> };
+  const vectorSource = style.sources?.[openMapConfig.primarySourceId];
+  if (!vectorSource || map.getSource("ratroo-buildings")) return;
+
+  map.addSource("ratroo-buildings", vectorSource as maplibregl.SourceSpecification);
+  map.addLayer({
+    id: "ratroo-buildings-3d",
+    type: "fill-extrusion",
+    source: "ratroo-buildings",
+    "source-layer": "building",
+    // Below the transit overlays: a stop marker hidden behind a tower is worse
+    // than a tower drawn over a rooftop.
+    minzoom: BUILDING_MIN_ZOOM,
+    layout: { visibility: visible ? "visible" : "none" },
+    paint: {
+      "fill-extrusion-color": "#dccfba",
+      // OSM height data is patchy — most Bengaluru footprints carry none — so
+      // an unmeasured building gets a low nominal storey rather than lying flat
+      // and leaving the skyline full of holes.
+      "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
+      "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+      "fill-extrusion-opacity": 0.82,
+    },
+  }, "ratroo-user-halo");
+}
+
 export default function OpenTransitMap({ latitude, longitude, address, nearby, route }: TransitMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
   const [pitched, setPitched] = useState(true);
+  // The style fetch can outlast a toggle, and the init effect closes over the
+  // pitch it saw on mount. Read the live value when the layer finally lands, or
+  // buildings reappear on a map the reader has already flattened.
+  const pitchedRef = useRef(pitched);
+  useEffect(() => {
+    pitchedRef.current = pitched;
+  }, [pitched]);
+  const nearbyKey = nearby.map((stop) => stop.id).join(",");
+  const routeKey = `${route?.id ?? ""}:${route?.stops.length ?? 0}`;
   const [routeOverlay, setRouteOverlay] = useState<{ points: string; start: [number, number]; end: [number, number] } | null>(null);
 
   useEffect(() => {
@@ -61,6 +117,14 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
       map.addLayer({ id: "ratroo-route", type: "line", source: "ratroo-route", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#f36d00", "line-width": 5, "line-opacity": 0.95 } });
       map.addLayer({ id: "ratroo-route-stops", type: "circle", source: "ratroo-route", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
 
+      // Not awaited: buildings are decoration, and the map is usable without
+      // them. A slow or unreachable style must not hold up the transit layers.
+      // Failures are logged rather than swallowed — a silent catch here is what
+      // made "no buildings" indistinguishable from "buildings not requested".
+      void addBuildingLayer(map, pitchedRef.current).catch((error) => {
+        console.warn("[ratroo] 3D buildings unavailable:", error);
+      });
+
       setReady(true);
     };
     const revealTimer = window.setTimeout(() => {
@@ -104,7 +168,8 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
         geometry: { type: "Point" as const, coordinates: [stop.longitude, stop.latitude] },
       })),
     });
-  }, [ready, latitude, longitude, address, nearby]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, latitude, longitude, address, nearbyKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -139,12 +204,28 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
       map.off("move", updateRouteOverlay);
       map.off("resize", updateRouteOverlay);
     };
-  }, [ready, route, nearby, latitude, longitude, pitched]);
+    // Keyed on what the stops *are*, not on the array's identity. `nearby` and
+    // `route` are rebuilt on every parent render, so depending on them re-ran
+    // this effect continuously and fitBounds re-framed the map each time —
+    // dragging the view back out from under anyone who panned or zoomed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, routeKey, nearbyKey, latitude, longitude, pitched]);
 
   function toggle3d() {
     const next = !pitched;
     setPitched(next);
-    mapRef.current?.easeTo({ pitch: next ? 52 : 0, bearing: next ? -10 : 0, duration: 650 });
+    const map = mapRef.current;
+    if (!map) return;
+    // Buildings only earn their cost when there is a pitch to see them from;
+    // viewed straight down they are just grey blocks over the map.
+    if (map.getLayer("ratroo-buildings-3d")) {
+      map.setLayoutProperty("ratroo-buildings-3d", "visibility", next ? "visible" : "none");
+    }
+    // Buildings exist from zoom 14. The map opens at 13.2 and fitBounds caps at
+    // 15, so a spread-out set of stops routinely leaves it below the threshold —
+    // where switching to 3D tilted an empty map and looked like a dead button.
+    const zoom = Math.max(map.getZoom(), next ? BUILDING_MIN_ZOOM + 0.5 : 0);
+    map.easeTo({ pitch: next ? 52 : 0, bearing: next ? -10 : 0, zoom, duration: 650 });
   }
 
   return (

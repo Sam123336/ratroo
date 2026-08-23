@@ -1,6 +1,4 @@
-const RATROO_API = (process.env.RATROO_API_URL || (process.env.NODE_ENV === "development"
-  ? "http://localhost:3000/v1"
-  : "https://ratroo-backend-sams-projects-83758424.vercel.app/v1")).replace(/\/$/, "");
+import { RATROO_API } from "@/lib/ratroo-api";
 
 type RouteRow = { id?: string; name?: string; providerCode?: string };
 type DepartureRow = { headsign?: string; routeId?: string; routeName?: string };

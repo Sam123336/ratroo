@@ -92,7 +92,8 @@ export async function POST(request: Request) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = payload as { message?: string; error?: { message?: string } };
-      throw new Error(error.message || error.error?.message || `Ratroo API returned ${response.status}.`);
+      const message = error.message || error.error?.message || `Ratroo API returned ${response.status}.`;
+      return Response.json({ message }, { status: response.status >= 500 ? 503 : response.status });
     }
 
     if (region === "bengaluru") return Response.json({ data: normalizeBengaluru(payload, from, to) });
@@ -100,10 +101,11 @@ export async function POST(request: Request) {
     return Response.json({ data: journey });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown backend error";
+    const noMatch = /no matching|no .*journey|not found/i.test(detail);
     return Response.json({
-      message: "The Ratroo transit backend is temporarily unavailable.",
+      message: noMatch ? detail : "The Ratroo transit backend is temporarily unavailable.",
       detail,
-    }, { status: 503 });
+    }, { status: noMatch ? 404 : 503 });
   }
 }
 
@@ -117,10 +119,13 @@ async function directRouteJourney(routeId: string, from: string, to: string) {
   const toKey = normalize(to);
   const originIndex = stops.findIndex((stop) => normalize(String(stop.name || "")) === fromKey);
   const destinationIndex = stops.findIndex((stop) => normalize(String(stop.name || "")) === toKey);
-  if (originIndex < 0 || destinationIndex < 0 || originIndex === destinationIndex) return null;
-  const origin = stops[originIndex];
+  if (destinationIndex < 0 || originIndex === destinationIndex) return null;
+  // Some provider route records only expose their two terminal stops even
+  // though the selected place is linked to that route. The reachable-place
+  // lookup is the authoritative boarding association in that case.
+  const origin = originIndex >= 0 ? stops[originIndex] : { name: from };
   const destination = stops[destinationIndex];
-  const stopCount = Math.abs(destinationIndex - originIndex);
+  const stopCount = originIndex >= 0 ? Math.abs(destinationIndex - originIndex) : Math.max(1, stops.length - 1);
   const durationMinutes = Math.max(4, stopCount * 2);
   const serviceName = String(route.longName || route.routeCode || route.shortName || "BMTC service");
   return {
@@ -143,7 +148,10 @@ async function directRouteJourney(routeId: string, from: string, to: string) {
     totalDurationMinutes: durationMinutes,
     transfersCount: 0,
     totalFare: null,
-    confidenceScore: 0.92,
-    confidenceBadges: [String(route.providerCode || "BMTC_OFFICIAL"), "Direct route stop sequence"],
+    confidenceScore: originIndex >= 0 ? 0.92 : 0.84,
+    confidenceBadges: [
+      String(route.providerCode || "BMTC_OFFICIAL"),
+      originIndex >= 0 ? "Direct route stop sequence" : "Boarding stop linked by provider place data",
+    ],
   };
 }

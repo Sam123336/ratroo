@@ -3,6 +3,8 @@
 import type { MapProvider } from "./contracts";
 import OpenStopMapPicker from "./providers/open/OpenStopMapPicker";
 import OpenTransitMap from "./providers/open/OpenTransitMap";
+import GoogleStopMapPicker from "./providers/google/GoogleStopMapPicker";
+import GoogleTransitMap from "./providers/google/GoogleTransitMap";
 
 const providers = new Map<string, MapProvider>();
 
@@ -11,6 +13,13 @@ providers.set("open", {
   publicLabel: "Open map · live Ratroo data",
   StopMapPicker: OpenStopMapPicker,
   TransitMap: OpenTransitMap,
+});
+
+providers.set("google", {
+  id: "google",
+  publicLabel: "Google Maps · live Ratroo data",
+  StopMapPicker: GoogleStopMapPicker,
+  TransitMap: GoogleTransitMap,
 });
 
 /** Infrastructure adapters register here without changing Rider or planner UI. */

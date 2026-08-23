@@ -3,12 +3,9 @@
 Ratroo pages do not import MapLibre, OpenStreetMap, OpenFreeMap, or Google Maps.
 They render the components exposed by `MapProvider` in `contracts.ts`.
 
-The current `open` adapter owns all MapLibre/OpenStreetMap implementation code.
-To add Google Maps later:
-
-1. Implement `StopMapPicker` and `TransitMap` under `providers/google/`.
-2. Register that adapter with `registerMapProvider({ id: "google", ... })`.
-3. Set `NEXT_PUBLIC_MAP_PROVIDER=google` and the browser-restricted Google key.
+The `open` adapter owns all MapLibre/OpenStreetMap implementation code. The
+`google` adapter is also registered and ready. To switch renderers, set
+`NEXT_PUBLIC_MAP_PROVIDER=google` and `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY`.
 
 No Rider form, route submission, journey-planning, backend DTO, or database code
 changes when the renderer changes. Coordinates remain vendor-neutral WGS84

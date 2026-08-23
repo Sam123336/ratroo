@@ -41,11 +41,6 @@ function isBengaluruRequest(question: string, lat?: number, lng?: number) {
   return inBengaluru || BENGALURU_TERMS.test(question);
 }
 
-function websiteQuestion(question: string, bengaluru: boolean) {
-  if (!bengaluru) return question;
-  return `PUBLIC WEBSITE COVERAGE: This journey is in Bengaluru/Karnataka, one of Ratroo's supported launch networks. Use the canonical journey and service tools for BMTC/BMRCL data. WBBus.in is West-Bengal-only and an empty WBBus.in result does not mean Bengaluru is unsupported. If the canonical tools find nothing, say only that no matching published route was found in Ratroo's current Bengaluru data.\n\nUSER QUESTION: ${question}`;
-}
-
 type NearbyStop = { name: string; provider: string; category: string; distanceMeters: number; routes: string[] };
 
 function nearbyStops(value: unknown): NearbyStop[] {
@@ -64,12 +59,20 @@ function nearbyStops(value: unknown): NearbyStop[] {
 }
 
 function questionWithNearbyStops(question: string, bengaluru: boolean, stops: NearbyStop[]) {
-  const coverage = websiteQuestion(question, bengaluru);
-  if (!stops.length) return coverage;
-  const list = stops.map((stop, index) =>
-    `${index + 1}. ${stop.name} [${stop.category}; ${stop.provider}; ${stop.distanceMeters}m; routes: ${stop.routes.join(", ") || "none published"}]`,
-  ).join("\n");
-  return `${coverage}\n\nAUTO-DETECTED NEARBY BOARDING OPTIONS (trusted Ratroo website data):\n${list}\nUse the closest suitable bus or metro stop as the origin when the user says “from here” or gives only a destination. Try these candidates in distance order. Do not claim a route unless a journey/service tool verifies the connection.`;
+  if (!bengaluru && !stops.length) return question;
+  const list = stops.slice(0, 6).map((stop) => {
+    const mode = stop.category.startsWith("METRO") ? "metro" : "bus";
+    const route = stop.routes[0] ? `,${stop.routes[0].slice(0, 20)}` : "";
+    return `${stop.name.slice(0, 38)}(${mode},${stop.distanceMeters}m${route})`;
+  }).join("; ").slice(0, 260);
+  const prefix = [
+    "Website context:",
+    bengaluru ? "Bengaluru/Karnataka is supported; use canonical BMTC/BMRCL tools, not WBBus." : "",
+    list ? `Nearby boarding options: ${list}.` : "",
+    "Use the closest suitable origin; never invent a connection.",
+  ].filter(Boolean).join(" ");
+  const room = Math.max(2, 500 - prefix.length - 7);
+  return `${prefix}\nUser: ${question.slice(0, room)}`;
 }
 
 function isRouteQuestion(question: string) {
@@ -141,8 +144,9 @@ export async function POST(request: Request) {
     const data = unwrap(payload);
     if (!response.ok || !data?.answer?.trim()) {
       if (bengaluru && stops.length) return fallbackResponse(stops);
-      const error = payload as { message?: string };
-      return Response.json({ message: error.message || "Ratroo AI could not answer that yet." }, { status: response.status || 502 });
+      const error = payload as { message?: string | string[] };
+      const detail = Array.isArray(error.message) ? error.message.join(" ") : error.message;
+      return Response.json({ message: detail || "Ratroo AI could not answer that yet." }, { status: response.status || 502 });
     }
     const toolCalls = data.toolCalls || [];
     return Response.json({ data: { answer: websiteAnswer(data.answer.trim(), bengaluru, toolCalls.length > 0, routeQuestion), toolCalls } }, {

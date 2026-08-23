@@ -31,6 +31,13 @@ const SUGGESTIONS = [
   "How do I get from Sealdah to Bongaon?",
 ];
 
+function stopsForAssistant(stops: NonNullable<Props["nearbyStops"]>) {
+  const buses = stops.filter((stop) => stop.category.startsWith("BUS")).slice(0, 5);
+  const metros = stops.filter((stop) => stop.category.startsWith("METRO")).slice(0, 5);
+  const selected = [...buses, ...metros];
+  return [...selected, ...stops.filter((stop) => !selected.includes(stop))].slice(0, 10);
+}
+
 function cleanAnswer(raw: string) {
   return raw
     .replace(/\*\*|__/g, "")
@@ -91,7 +98,7 @@ export default function PublicAssistant({ latitude, longitude, locationLabel, ne
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ question, lat: latitude, lng: longitude, nearbyStops: nearbyStops.slice(0, 10) }),
+        body: JSON.stringify({ question, lat: latitude, lng: longitude, nearbyStops: stopsForAssistant(nearbyStops) }),
       });
       const payload = await response.json().catch(() => ({})) as { data?: { answer?: string; toolCalls?: string[] }; message?: string };
       if (!response.ok || !payload.data?.answer) throw new Error(payload.message || "No answer came back.");
@@ -142,7 +149,7 @@ export default function PublicAssistant({ latitude, longitude, locationLabel, ne
         {!messages.length && <section className="assistant-intro"><div className="assistant-orbit">AI<span /></div><h2>Where do you want to go?</h2><p>Ask in English or Bengali. Ratroo checks real routes and timetables instead of guessing.</p><div>{SUGGESTIONS.map(suggestion => <button type="button" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}<span>→</span></button>)}</div></section>}
         {messages.map(message => <article className={`assistant-message ${message.role}`} key={message.id}>
           <div>{message.text.split("\n").map(linkedLine)}</div>
-          {message.role === "assistant" && Boolean(message.toolCalls?.length) && <small><span>✓</span> From live route data</small>}
+          {message.role === "assistant" && Boolean(message.toolCalls?.length) && <small><span>✓</span>{message.toolCalls?.includes("nearby_stops") ? " From live nearby data" : " From live route data"}</small>}
         </article>)}
         {busy && <article className="assistant-message assistant thinking"><div><span /><span /><span /></div><small>Checking routes and timetables…</small></article>}
         {error && <div className="assistant-error" role="alert">{error}<button type="button" onClick={() => setError("")}>×</button></div>}

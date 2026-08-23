@@ -81,6 +81,32 @@ function websiteAnswer(answer: string, bengaluru: boolean, grounded: boolean, ro
   return "🚏 Bengaluru journey\n\nRatroo found nearby BMTC stops, but it could not verify a published stop sequence connecting this origin and destination. A nearby stop does not automatically mean that one of its buses serves the requested destination. Try an exact BMTC stop name or route number.";
 }
 
+function nearbyFallback(stops: NearbyStop[]) {
+  const distance = (metres: number) => metres < 1000 ? `${metres} m` : `${(metres / 1000).toFixed(1)} km`;
+  const lines = (label: string, values: NearbyStop[]) => values.length
+    ? [`${label}:`, ...values.slice(0, 3).map((stop) =>
+      `• ${stop.name} — ${distance(stop.distanceMeters)}${stop.routes.length ? ` — ${stop.routes.slice(0, 3).join(", ")}` : ""}`,
+    )]
+    : [];
+  const buses = stops.filter((stop) => stop.category.startsWith("BUS"));
+  const metros = stops.filter((stop) => stop.category.startsWith("METRO"));
+  return [
+    "🚏 Nearby boarding options",
+    "",
+    ...lines("🚌 Bus stops", buses),
+    ...(buses.length && metros.length ? [""] : []),
+    ...lines("🚇 Metro stations", metros),
+    "",
+    "The full route lookup is taking longer than expected. These are live nearby options; choose an exact stop or route number and try again.",
+  ].join("\n");
+}
+
+function fallbackResponse(stops: NearbyStop[]) {
+  return Response.json({ data: { answer: nearbyFallback(stops), toolCalls: ["nearby_stops"] } }, {
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 export async function POST(request: Request) {
   if (isRateLimited(request)) {
     return Response.json({ message: "Too many questions right now. Please wait a few minutes and try again." }, { status: 429 });
@@ -99,7 +125,9 @@ export async function POST(request: Request) {
   const routeQuestion = isRouteQuestion(question);
   const stops = nearbyStops(body.nearbyStops);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 88_000);
+  // Finish before the hosting gateway closes the connection. Bengaluru can
+  // still return the already-resolved nearby network when the model is slow.
+  const timer = setTimeout(() => controller.abort(), 25_000);
 
   try {
     const response = await fetch(`${ratrooApiUrl()}/assistant/ask`, {
@@ -112,6 +140,7 @@ export async function POST(request: Request) {
     const payload = await response.json().catch(() => ({}));
     const data = unwrap(payload);
     if (!response.ok || !data?.answer?.trim()) {
+      if (bengaluru && stops.length) return fallbackResponse(stops);
       const error = payload as { message?: string };
       return Response.json({ message: error.message || "Ratroo AI could not answer that yet." }, { status: response.status || 502 });
     }
@@ -120,6 +149,7 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (bengaluru && stops.length) return fallbackResponse(stops);
     return Response.json({
       message: error instanceof Error && error.name === "AbortError"
         ? "Ratroo AI took too long. Please try a more specific journey question."

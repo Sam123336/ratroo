@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 const BACKEND_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 6000 : 1800;
 
 type CityRegion = "kolkata" | "bengaluru";
@@ -115,17 +115,17 @@ async function fetchBackendMatches(endpoint: string, region?: CityRegion) {
 async function backendMatches(region: CityRegion, query: string) {
   const params = new URLSearchParams({ q: query, limit: "12" });
   if (region !== "bengaluru") {
-    return fetchBackendMatches(`${RATROO_API}/search?${params}`, region);
+    return fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`, region);
   }
 
   // The regional index is intentionally narrower than the canonical search
   // index and may return a successful empty response for real BMTC stops.
   // An empty result is therefore not authoritative: fall back to the general
   // index and retain only results whose coordinates place them in Bengaluru.
-  const regional = await fetchBackendMatches(`${RATROO_API}/regions/bengaluru/search?${params}`, region);
+  const regional = await fetchBackendMatches(`${ratrooApiUrl()}/regions/bengaluru/search?${params}`, region);
   if (regional.length) return regional;
 
-  const canonical = await fetchBackendMatches(`${RATROO_API}/search?${params}`);
+  const canonical = await fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`);
   return canonical.filter((item) => item.region === "bengaluru");
 }
 

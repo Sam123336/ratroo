@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 type BengaluruLeg = {
   mode: string;
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
 
     if (region === "bengaluru") {
       const regionalResponse = await fetch(
-        `${RATROO_API}/regions/bengaluru/journeys?${new URLSearchParams({ from, to, limit: "5" })}`,
+        `${ratrooApiUrl()}/regions/bengaluru/journeys?${new URLSearchParams({ from, to, limit: "5" })}`,
         { headers: { "Accept": "application/json" } },
       );
       const regionalPayload = await regionalResponse.json().catch(() => ({}));
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const response = await fetch(`${RATROO_API}/journey`, {
+    const response = await fetch(`${ratrooApiUrl()}/journey`, {
       method: "POST",
       headers: { "Accept": "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ from, to }),
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
 }
 
 async function directRouteJourney(routeId: string, from: string, to: string) {
-  const response = await fetch(`${RATROO_API}/routes/${encodeURIComponent(routeId)}`, { headers: { "Accept": "application/json" } });
+  const response = await fetch(`${ratrooApiUrl()}/routes/${encodeURIComponent(routeId)}`, { headers: { "Accept": "application/json" } });
   if (!response.ok) return null;
   const route = deepestData(await response.json()) as Record<string, unknown>;
   const stops = (Array.isArray(route.stops) ? route.stops : []) as Array<Record<string, unknown>>;

@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 function unwrapArray(payload: unknown): unknown[] {
   let current = payload;
@@ -33,11 +33,11 @@ export async function GET(request: Request) {
   const regionSlug = region === "kolkata" ? "west-bengal" : "bengaluru";
   let endpoint: string | null = null;
   const useNearbyBus = mode === "bus" && Number.isFinite(lat) && Number.isFinite(lng);
-  if (useNearbyBus) endpoint = `${RATROO_API}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: "5000" })}`;
-  else if (mode === "bus") endpoint = `${RATROO_API}/regions/${regionSlug}/bus/routes`;
-  else if (mode === "metro") endpoint = `${RATROO_API}/regions/${regionSlug}/metro/lines`;
+  if (useNearbyBus) endpoint = `${ratrooApiUrl()}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: "5000" })}`;
+  else if (mode === "bus") endpoint = `${ratrooApiUrl()}/regions/${regionSlug}/bus/routes`;
+  else if (mode === "metro") endpoint = `${ratrooApiUrl()}/regions/${regionSlug}/metro/lines`;
   else if (region === "kolkata" && ["tram", "ferry", "rail"].includes(mode)) {
-    endpoint = `${RATROO_API}/search?${new URLSearchParams({ q: mode })}`;
+    endpoint = `${ratrooApiUrl()}/search?${new URLSearchParams({ q: mode })}`;
   }
 
   if (!endpoint) return Response.json({ data: [], status: "planned", message: `${mode} data is not available in this region.` });

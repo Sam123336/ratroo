@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 type SupportedRegion = "kolkata" | "bengaluru" | "unsupported";
 
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   let stopCount = 0;
 
   const [coverageResult, addressResult] = await Promise.allSettled([
-    fetch(`${RATROO_API}/coverage/summary?${new URLSearchParams({ lat: String(lat), lng: String(lng) })}`, {
+    fetch(`${ratrooApiUrl()}/coverage/summary?${new URLSearchParams({ lat: String(lat), lng: String(lng) })}`, {
       headers: { "Accept": "application/json" },
     }),
     (async () => {

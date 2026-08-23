@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 type NearbyRoute = { id: string; name: string };
 
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
 
   for (const radius of [1000, 5000, 15000, 30000]) {
     try {
-      const response = await fetch(`${RATROO_API}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: String(radius) })}`, {
+      const response = await fetch(`${ratrooApiUrl()}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: String(radius) })}`, {
         headers: { "Accept": "application/json" },
       });
       if (!response.ok) continue;

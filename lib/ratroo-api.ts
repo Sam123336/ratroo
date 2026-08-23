@@ -6,5 +6,7 @@ function requireServerEnv(name: "RATROO_API_URL"): string {
   return value;
 }
 
-/** Server-only backend address. The value always comes from deployment config. */
-export const RATROO_API = requireServerEnv("RATROO_API_URL").replace(/\/$/, "");
+/** Server-only backend address, resolved at request time from deployment config. */
+export function ratrooApiUrl() {
+  return requireServerEnv("RATROO_API_URL").replace(/\/$/, "");
+}

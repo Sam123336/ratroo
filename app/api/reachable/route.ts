@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 type RouteRow = { id?: string; name?: string; providerCode?: string };
 type DepartureRow = { headsign?: string; routeId?: string; routeName?: string };
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   if (!placeId || !origin) return Response.json({ data: [] });
 
   try {
-    const response = await fetch(`${RATROO_API}/places/${encodeURIComponent(placeId)}`, { headers: { "Accept": "application/json" } });
+    const response = await fetch(`${ratrooApiUrl()}/places/${encodeURIComponent(placeId)}`, { headers: { "Accept": "application/json" } });
     if (!response.ok) throw new Error(`Place lookup returned ${response.status}`);
     const place = deepestData(await response.json()) as { routes?: RouteRow[]; departures?: DepartureRow[] };
     const seen = new Set<string>();

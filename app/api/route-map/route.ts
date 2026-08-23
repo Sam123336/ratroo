@@ -1,4 +1,4 @@
-import { RATROO_API } from "@/lib/ratroo-api";
+import { ratrooApiUrl } from "@/lib/ratroo-api";
 
 function deepestData(value: unknown): unknown {
   let current = value;
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const centerLng = Number(url.searchParams.get("lng"));
   if (!routeId) return Response.json({ message: "A route id is required." }, { status: 400 });
   try {
-    const response = await fetch(`${RATROO_API}/routes/${encodeURIComponent(routeId)}`, { headers: { "Accept": "application/json" } });
+    const response = await fetch(`${ratrooApiUrl()}/routes/${encodeURIComponent(routeId)}`, { headers: { "Accept": "application/json" } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return Response.json({ message: "Route geometry is unavailable." }, { status: response.status });
     const route = deepestData(payload) as Record<string, unknown>;

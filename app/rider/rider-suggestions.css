@@ -1,0 +1,94 @@
+.stop-search {
+  position: relative;
+  min-width: 0;
+}
+
+.stop-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  right: 0;
+  left: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--r-line);
+  border-radius: 15px;
+  background: var(--r-card);
+  box-shadow: 0 20px 46px #14221b2b;
+}
+
+.stop-suggestions button {
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  text-align: left;
+}
+
+.stop-suggestions button:hover,
+.stop-suggestions button.active {
+  background: #f1eadf;
+}
+
+.stop-suggestions button > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px 11px 11px 4px;
+  background: var(--r-ink);
+  color: #fff;
+}
+
+.stop-suggestions button > span:nth-child(2) {
+  min-width: 0;
+}
+
+.stop-suggestions strong,
+.stop-suggestions small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-suggestions strong {
+  font-size: 13px;
+}
+
+.stop-suggestions small {
+  margin-top: 4px;
+  color: #6b776f;
+  font-size: 10px;
+}
+
+.stop-suggestions button > b {
+  color: var(--r-green);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.stop-suggestions > p {
+  margin: 5px 8px 2px;
+  color: #877e72;
+  font: 600 9px var(--font-geist-mono), monospace;
+}
+
+.stop-suggestion-state {
+  padding: 16px 12px;
+  color: #66736b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 600px) {
+  .stop-suggestions {
+    right: -96px;
+  }
+}

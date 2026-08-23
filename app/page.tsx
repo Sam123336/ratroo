@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -40,6 +40,15 @@ type LocationState = {
   modes: string[];
 };
 
+type Suggestion = {
+  id: string;
+  name: string;
+  type: string;
+  mode: string;
+  providerCode: string;
+  subtitle: string;
+};
+
 const modesByRegion = {
   kolkata: [
     { icon: "B", name: "Bus", detail: "WBTC and city routes", color: "blue" },
@@ -59,6 +68,125 @@ function unwrapJourney(payload: unknown): Journey {
   const data = (body?.data ?? body) as Journey;
   if (!data?.legs || !Array.isArray(data.legs)) throw new Error(body?.message || "No journey was returned.");
   return data;
+}
+
+function SuggestionInput({
+  field,
+  value,
+  placeholder,
+  region,
+  onChange,
+  onSelect,
+}: {
+  field: "FROM" | "TO";
+  value: string;
+  placeholder: string;
+  region: SupportedRegion | "all";
+  onChange: (value: string) => void;
+  onSelect: (suggestion: Suggestion) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (!query) {
+      setSuggestions([]);
+      setOpen(false);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ q: query, region });
+        const response = await fetch(`/api/suggestions?${params}`, { signal: controller.signal });
+        const payload = await response.json() as { data?: Suggestion[] };
+        setSuggestions(payload.data || []);
+        setActiveIndex(-1);
+        setOpen(true);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setSuggestions([]);
+          setOpen(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 260);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [value, region]);
+
+  function choose(suggestion: Suggestion) {
+    onSelect(suggestion);
+    setOpen(false);
+    setSuggestions([]);
+    setActiveIndex(-1);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!open) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((index) => Math.min(index + 1, suggestions.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      choose(suggestions[activeIndex]);
+    } else if (event.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className="autocomplete">
+      <label>
+        <span>{field}</span>
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => value.trim() && setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          aria-label={field === "FROM" ? "Starting point" : "Destination"}
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={`${field.toLowerCase()}-suggestions`}
+          autoComplete="off"
+        />
+      </label>
+      {open && (
+        <div className="suggestions" id={`${field.toLowerCase()}-suggestions`} role="listbox">
+          {loading && <div className="suggestion-status"><span className="mini-spinner" /> Searching {region === "all" ? "Kolkata and Bengaluru" : region === "kolkata" ? "Kolkata" : "Bengaluru"}…</div>}
+          {!loading && suggestions.length === 0 && <div className="suggestion-status">No matching stops, stations, or routes.</div>}
+          {!loading && suggestions.map((suggestion, index) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={activeIndex === index}
+              className={activeIndex === index ? "active" : ""}
+              key={`${suggestion.id}-${index}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(suggestion)}
+            >
+              <span className={`suggestion-icon ${suggestion.mode.toLowerCase()}`}>{suggestion.mode.charAt(0)}</span>
+              <span><strong>{suggestion.name}</strong><small>{suggestion.subtitle}</small></span>
+              <b>↗</b>
+            </button>
+          ))}
+          <div className="suggestion-footer">Ratroo transit data · ↑↓ to navigate · Enter to select</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -201,9 +329,23 @@ export default function Home() {
           {location && <div className={`location-result ${location.region}`} data-hero-reveal><span>●</span><div><small>{location.region === "unsupported" ? "CURRENT LOCATION · NOT COVERED YET" : `CURRENT LOCATION · ${location.name.toUpperCase()}`}</small><strong>{location.address}</strong></div></div>}
           <form className="planner-card" id="plan" onSubmit={planJourney} data-hero-reveal>
             <div className="planner-row">
-              <label><span>FROM</span><input value={from} onChange={(event) => setFrom(event.target.value)} placeholder={location?.region === "bengaluru" ? "Majestic" : "Esplanade, Kolkata"} aria-label="Starting point" /></label>
+              <SuggestionInput
+                field="FROM"
+                value={from}
+                region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
+                onChange={(value) => { setFrom(value); setJourney(null); }}
+                onSelect={(suggestion) => { setFrom(suggestion.name); setJourney(null); }}
+                placeholder={location?.region === "bengaluru" ? "Majestic" : "Esplanade, Kolkata"}
+              />
               <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); }}>↕</button>
-              <label><span>TO</span><input value={to} onChange={(event) => setTo(event.target.value)} placeholder={location?.region === "bengaluru" ? "Indiranagar" : "Dakshineswar"} aria-label="Destination" /></label>
+              <SuggestionInput
+                field="TO"
+                value={to}
+                region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
+                onChange={(value) => { setTo(value); setJourney(null); }}
+                onSelect={(suggestion) => { setTo(suggestion.name); setJourney(null); }}
+                placeholder={location?.region === "bengaluru" ? "Indiranagar" : "Dakshineswar"}
+              />
               <button className="plan-button" type="submit" disabled={status === "loading"}>{status === "loading" ? "Planning…" : <>Find my route <span>→</span></>}</button>
             </div>
             <p className="privacy-note"><span>✓</span> No login. Location is used only to choose the right city network.</p>

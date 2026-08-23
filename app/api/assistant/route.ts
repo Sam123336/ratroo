@@ -46,8 +46,12 @@ function websiteQuestion(question: string, bengaluru: boolean) {
   return `PUBLIC WEBSITE COVERAGE: This journey is in Bengaluru/Karnataka, one of Ratroo's supported launch networks. Use the canonical journey and service tools for BMTC/BMRCL data. WBBus.in is West-Bengal-only and an empty WBBus.in result does not mean Bengaluru is unsupported. If the canonical tools find nothing, say only that no matching published route was found in Ratroo's current Bengaluru data.\n\nUSER QUESTION: ${question}`;
 }
 
-function websiteAnswer(answer: string, bengaluru: boolean) {
-  if (!bengaluru || !WEST_BENGAL_ONLY.test(answer)) return answer;
+function isRouteQuestion(question: string) {
+  return /(?:\bfrom\b.*\bto\b|\bto\b|→|\btheke\b|\broute\b|\bjourney\b)/i.test(question);
+}
+
+function websiteAnswer(answer: string, bengaluru: boolean, grounded: boolean, routeQuestion: boolean) {
+  if (!bengaluru || (!WEST_BENGAL_ONLY.test(answer) && (grounded || !routeQuestion))) return answer;
   return "🚏 Bengaluru journey\n\nRatroo found nearby BMTC stops, but it could not verify a published stop sequence connecting this origin and destination. A nearby stop does not automatically mean that one of its buses serves the requested destination. Try an exact BMTC stop name or route number.";
 }
 
@@ -66,6 +70,7 @@ export async function POST(request: Request) {
   const lng = Number(body.lng);
   const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
   const bengaluru = isBengaluruRequest(question, hasLocation ? lat : undefined, hasLocation ? lng : undefined);
+  const routeQuestion = isRouteQuestion(question);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 88_000);
 
@@ -83,7 +88,8 @@ export async function POST(request: Request) {
       const error = payload as { message?: string };
       return Response.json({ message: error.message || "Ratroo AI could not answer that yet." }, { status: response.status || 502 });
     }
-    return Response.json({ data: { answer: websiteAnswer(data.answer.trim(), bengaluru), toolCalls: data.toolCalls || [] } }, {
+    const toolCalls = data.toolCalls || [];
+    return Response.json({ data: { answer: websiteAnswer(data.answer.trim(), bengaluru, toolCalls.length > 0, routeQuestion), toolCalls } }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

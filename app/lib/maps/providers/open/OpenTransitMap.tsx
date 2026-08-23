@@ -13,6 +13,29 @@ const emptyCollection = { type: "FeatureCollection" as const, features: [] };
 const BUILDING_MIN_ZOOM = 14;
 
 /**
+ * How much taller than reality the buildings stand.
+ *
+ * Bengaluru's OSM footprints almost never carry a height, so OpenMapTiles fills
+ * `render_height` with a nominal few metres — measured median across 312
+ * rendered buildings here: 4. At street zoom that is about five pixels of lift,
+ * which is why the map looked flat while the extrusions were working perfectly.
+ *
+ * This is deliberately not a measurement. Nothing in the data says how tall
+ * these buildings are, and this does not pretend to: it is a drawing choice, so
+ * a city reads as a city. Relative heights are still honest — a genuinely tall
+ * building stays taller than its neighbours — but no number on this map should
+ * be taken as a building's height, and nothing else in Ratroo derives anything
+ * from it.
+ *
+ * ponytail: one global multiplier, tuned by eye. If the look needs to vary by
+ * area or building class, this is the knob to replace.
+ */
+const BUILDING_HEIGHT_EXAGGERATION = 2.5;
+
+/** A storey, so nothing renders as a pancake when the source says almost nothing. */
+const BUILDING_MIN_HEIGHT_M = 4;
+
+/**
  * Give the map real depth, not just a tilted photograph.
  *
  * The base map is raster OSM, which is a picture: pitching it leans the image
@@ -45,13 +68,22 @@ async function addBuildingLayer(map: MapLibreMap, visible: boolean) {
     minzoom: BUILDING_MIN_ZOOM,
     layout: { visibility: visible ? "visible" : "none" },
     paint: {
-      "fill-extrusion-color": "#dccfba",
-      // OSM height data is patchy — most Bengaluru footprints carry none — so
-      // an unmeasured building gets a low nominal storey rather than lying flat
-      // and leaving the skyline full of holes.
-      "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
+      // Warmer and deeper than the raster's building beige. Matching it meant
+      // beige blocks cast onto beige blocks, invisible however tall they stood.
+      "fill-extrusion-color": "#c2ab8e",
+      "fill-extrusion-height": [
+        "*",
+        ["max", ["coalesce", ["get", "render_height"], BUILDING_MIN_HEIGHT_M], BUILDING_MIN_HEIGHT_M],
+        BUILDING_HEIGHT_EXAGGERATION,
+      ],
       "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-      "fill-extrusion-opacity": 0.82,
+      // Shades the walls darker than the roofs, which is what actually makes a
+      // block read as solid rather than as a flat patch of colour.
+      "fill-extrusion-vertical-gradient": true,
+      // Not opaque: the base map's street and building labels sit underneath,
+      // and burying them to gain a little solidity is a poor trade on a map
+      // someone is using to find a stop.
+      "fill-extrusion-opacity": 0.9,
     },
   }, "ratroo-user-halo");
 }

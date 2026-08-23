@@ -1,0 +1,36 @@
+.oauth-only-copy {
+  margin: -12px 0 26px;
+  color: #5b675f;
+  line-height: 1.55;
+}
+
+.oauth-button-primary {
+  min-height: 62px;
+  margin: 0;
+  background: var(--r-orange);
+  border-color: var(--r-orange);
+  color: #231706;
+  box-shadow: 0 7px 0 #c65d08;
+}
+
+.oauth-button-primary:hover {
+  border-color: var(--r-orange);
+  box-shadow: 0 9px 0 #c65d08;
+}
+
+.oauth-trust {
+  display: grid;
+  gap: 7px;
+  margin-top: 26px;
+  padding: 18px;
+  border: 1px solid #bfd6c7;
+  border-radius: 15px;
+  background: var(--r-soft);
+  color: #4f5e55;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.oauth-trust b {
+  color: var(--r-green);
+}

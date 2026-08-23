@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./rider.css";
+import "./rider-oauth.css";
 import "./rider-suggestions.css";
 
 export const metadata: Metadata = {

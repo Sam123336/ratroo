@@ -33,8 +33,6 @@ const statusCopy: Record<string, [string, string]> = {
   WITHDRAWN: ["Hidden", "This service is not visible to riders."],
 };
 
-const googleOAuthEnabled = process.env.NEXT_PUBLIC_RIDER_GOOGLE_OAUTH_ENABLED === "true";
-
 function oauthErrorMessage() {
   if (typeof window === "undefined") return "";
   const error = new URLSearchParams(window.location.search).get("oauth_error");
@@ -137,7 +135,6 @@ function StopSearchInput({ index, stop, label, placeholder, onChange, onSelect }
 
 export default function RiderPortal() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [operator, setOperator] = useState<Operator | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -170,21 +167,6 @@ export default function RiderPortal() {
     if (params.has("oauth_error") || params.has("oauth")) window.history.replaceState({}, "", "/rider");
     queueMicrotask(() => void load());
   }, []);
-
-  async function auth(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setMessage("");
-    const values = Object.fromEntries(new FormData(event.currentTarget));
-    try {
-      const response = await fetch("/api/rider/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: authMode, ...values }) });
-      const text = await response.text();
-      let payload: { message?: string } = {};
-      try { payload = text ? JSON.parse(text) : {}; }
-      catch { payload = { message: "Ratroo returned an invalid response. Please refresh and try again." }; }
-      if (!response.ok) throw new Error(payload.message || "Could not continue.");
-      await load();
-    } catch (error) { setMessage((error as Error).message); }
-    finally { setBusy(false); }
-  }
 
   async function saveOperator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
@@ -236,16 +218,11 @@ export default function RiderPortal() {
     <main className="rider-auth">
       <section className="rider-auth-story"><Link href="/" className="rider-brand"><b>R</b> ratroo rider</Link><p className="eyebrow">For local transport partners</p><h1>Your route can help <em>thousands</em> travel better.</h1><p>Add your bus, auto, e-rickshaw or shared taxi in four simple steps. We check everything before riders see it.</p><div className="auth-promise"><span>1</span> Register <i>→</i><span>2</span> Add vehicle <i>→</i><span>3</span> Add stops <i>→</i><span>4</span> Send</div></section>
       <section className="rider-auth-card">
-        <p className="eyebrow">Welcome</p><h2>{authMode === "login" ? "Continue your registration" : "Create your operator account"}</h2>
-        {googleOAuthEnabled && <><Link className="oauth-button" href="/api/rider/oauth/google/start" prefetch={false}><span>G</span> Continue with Google</Link><div className="auth-divider"><span>or use email</span></div></>}
-        <form onSubmit={auth}>
-          {authMode === "register" && <label>Your name<input name="displayName" minLength={2} required placeholder="What should we call you?" /></label>}
-          <label>Email address<input name="email" type="email" required placeholder="you@example.com" /></label>
-          <label>Password<input name="password" type="password" minLength={8} required placeholder="At least 8 characters" /></label>
-          {message && <p className="form-message error">{message}</p>}
-          <button className="primary" disabled={busy}>{busy ? "Please wait…" : authMode === "login" ? "Sign in →" : "Create account →"}</button>
-        </form>
-        <button className="text-button" onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setMessage(""); }}>{authMode === "login" ? "New here? Create an account" : "Already registered? Sign in"}</button>
+        <p className="eyebrow">Verified rider access</p><h2>Continue with Google</h2>
+        <p className="oauth-only-copy">Every Rider account must use a real Google account. Email-and-password registration is not accepted.</p>
+        {message && <p className="form-message error">{message}</p>}
+        <Link className="oauth-button oauth-button-primary" href="/api/rider/oauth/google/start" prefetch={false}><span>G</span> Verify and continue with Google →</Link>
+        <div className="oauth-trust"><b>Google verifies your email account.</b><span>Ratroo admin will separately review your operator, vehicle, stops and routes before anything is published.</span></div>
       </section>
     </main>
   );

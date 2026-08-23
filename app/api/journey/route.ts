@@ -79,12 +79,26 @@ export async function POST(request: Request) {
       const direct = await directRouteJourney(body.routeId, from, to);
       if (direct) return Response.json({ data: direct });
     }
-    const endpoint = region === "bengaluru"
-      ? `${RATROO_API}/regions/bengaluru/journeys?${new URLSearchParams({ from, to, limit: "5" })}`
-      : `${RATROO_API}/journey`;
-    const response = await fetch(endpoint, region === "bengaluru" ? {
-      headers: { "Accept": "application/json" },
-    } : {
+
+    if (region === "bengaluru") {
+      const regionalResponse = await fetch(
+        `${RATROO_API}/regions/bengaluru/journeys?${new URLSearchParams({ from, to, limit: "5" })}`,
+        { headers: { "Accept": "application/json" } },
+      );
+      const regionalPayload = await regionalResponse.json().catch(() => ({}));
+
+      if (regionalResponse.ok) {
+        try {
+          return Response.json({ data: normalizeBengaluru(regionalPayload, from, to) });
+        } catch {
+          // The regional mobility index is intentionally smaller than the
+          // canonical graph. Fall through for stops such as Kasavanahalli,
+          // which are valid BMTC boarding points but are not regional nodes.
+        }
+      }
+    }
+
+    const response = await fetch(`${RATROO_API}/journey`, {
       method: "POST",
       headers: { "Accept": "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ from, to }),
@@ -96,7 +110,6 @@ export async function POST(request: Request) {
       return Response.json({ message }, { status: response.status >= 500 ? 503 : response.status });
     }
 
-    if (region === "bengaluru") return Response.json({ data: normalizeBengaluru(payload, from, to) });
     const journey = deepestData(payload);
     return Response.json({ data: journey });
   } catch (error) {

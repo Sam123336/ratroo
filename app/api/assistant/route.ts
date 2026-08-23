@@ -32,6 +32,25 @@ function unwrap(value: unknown) {
   return current as { answer?: string; toolCalls?: string[] } | null;
 }
 
+const BENGALURU_TERMS = /\b(bengaluru|bangalore|karnataka|whitefield|kasavanahalli|majestic|indiranagar|koramangala|electronic city|kempegowda)\b/i;
+const WEST_BENGAL_ONLY = /(only (?:cover|covers|support|supports).*west bengal|tools? (?:available|provided).*west bengal|karnataka.*(?:not|isn't|is not).*cover)/i;
+
+function isBengaluruRequest(question: string, lat?: number, lng?: number) {
+  const inBengaluru = lat !== undefined && lng !== undefined
+    && lat >= 12.65 && lat <= 13.25 && lng >= 77.30 && lng <= 78.05;
+  return inBengaluru || BENGALURU_TERMS.test(question);
+}
+
+function websiteQuestion(question: string, bengaluru: boolean) {
+  if (!bengaluru) return question;
+  return `PUBLIC WEBSITE COVERAGE: This journey is in Bengaluru/Karnataka, one of Ratroo's supported launch networks. Use the canonical journey and service tools for BMTC/BMRCL data. WBBus.in is West-Bengal-only and an empty WBBus.in result does not mean Bengaluru is unsupported. If the canonical tools find nothing, say only that no matching published route was found in Ratroo's current Bengaluru data.\n\nUSER QUESTION: ${question}`;
+}
+
+function websiteAnswer(answer: string, bengaluru: boolean) {
+  if (!bengaluru || !WEST_BENGAL_ONLY.test(answer)) return answer;
+  return "🚏 Bengaluru journey\n\nI couldn't find a matching published route in Ratroo's current Bengaluru data. Try the official BMTC stop names or a bus route number so I can search more precisely.";
+}
+
 export async function POST(request: Request) {
   if (isRateLimited(request)) {
     return Response.json({ message: "Too many questions right now. Please wait a few minutes and try again." }, { status: 429 });
@@ -46,6 +65,7 @@ export async function POST(request: Request) {
   const lat = Number(body.lat);
   const lng = Number(body.lng);
   const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const bengaluru = isBengaluruRequest(question, hasLocation ? lat : undefined, hasLocation ? lng : undefined);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 88_000);
 
@@ -53,7 +73,7 @@ export async function POST(request: Request) {
     const response = await fetch(`${ratrooApiUrl()}/assistant/ask`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ question, ...(hasLocation ? { lat, lng } : {}) }),
+      body: JSON.stringify({ question: websiteQuestion(question, bengaluru), ...(hasLocation ? { lat, lng } : {}) }),
       signal: controller.signal,
       cache: "no-store",
     });
@@ -63,7 +83,7 @@ export async function POST(request: Request) {
       const error = payload as { message?: string };
       return Response.json({ message: error.message || "Ratroo AI could not answer that yet." }, { status: response.status || 502 });
     }
-    return Response.json({ data: { answer: data.answer.trim(), toolCalls: data.toolCalls || [] } }, {
+    return Response.json({ data: { answer: websiteAnswer(data.answer.trim(), bengaluru), toolCalls: data.toolCalls || [] } }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

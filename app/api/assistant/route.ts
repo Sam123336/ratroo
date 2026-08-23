@@ -33,7 +33,7 @@ function unwrap(value: unknown) {
 }
 
 const BENGALURU_TERMS = /\b(bengaluru|bangalore|karnataka|whitefield|kasavanahalli|majestic|indiranagar|koramangala|electronic city|kempegowda)\b/i;
-const WEST_BENGAL_ONLY = /(only (?:cover|covers|support|supports).*west bengal|tools?[\s\S]{0,160}(?:only|limited)[\s\S]{0,80}west bengal|west bengal[\s\S]{0,80}only|karnataka.*(?:not|isn't|is not).*cover)/i;
+const WEST_BENGAL_ONLY = /(only (?:cover|covers|support|supports).*west bengal|tools?[\s\S]{0,220}west bengal|west bengal[\s\S]{0,100}(?:only|limited)|(?:cannot|can't|do not|don't)[\s\S]{0,180}(?:bmtc|bmrcl|bengaluru|karnataka)|karnataka.*(?:not|isn't|is not).*cover)/i;
 
 function isBengaluruRequest(question: string, lat?: number, lng?: number) {
   const inBengaluru = lat !== undefined && lng !== undefined
@@ -48,7 +48,7 @@ function websiteQuestion(question: string, bengaluru: boolean) {
 
 function websiteAnswer(answer: string, bengaluru: boolean) {
   if (!bengaluru || !WEST_BENGAL_ONLY.test(answer)) return answer;
-  return "🚏 Bengaluru journey\n\nI couldn't find a matching published route in Ratroo's current Bengaluru data. Try the official BMTC stop names or a bus route number so I can search more precisely.";
+  return "🚏 Bengaluru journey\n\nRatroo found nearby BMTC stops, but it could not verify a published stop sequence connecting this origin and destination. A nearby stop does not automatically mean that one of its buses serves the requested destination. Try an exact BMTC stop name or route number.";
 }
 
 export async function POST(request: Request) {

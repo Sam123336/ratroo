@@ -15,7 +15,9 @@ type Props = {
   locationLabel?: string;
 };
 
-const STORAGE_KEY = "ratroo.public-assistant.v1";
+// Bumped after removing historically saved West-Bengal-only replies for
+// Bengaluru questions. Old answers must not survive a corrected deployment.
+const STORAGE_KEY = "ratroo.public-assistant.v2";
 const SUGGESTIONS = [
   "How do I get to Digha from here?",
   "ekhan theke Bongaon kivabe jabo?",

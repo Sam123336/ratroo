@@ -49,6 +49,9 @@ type Suggestion = {
   subtitle: string;
 };
 
+type NetworkItem = { id: string; title: string; subtitle: string };
+const EMPTY_SUGGESTIONS: Suggestion[] = [];
+
 const modesByRegion = {
   kolkata: [
     { icon: "B", name: "Bus", detail: "WBTC and city routes", color: "blue" },
@@ -75,6 +78,7 @@ function SuggestionInput({
   value,
   placeholder,
   region,
+  recommended = EMPTY_SUGGESTIONS,
   onChange,
   onSelect,
 }: {
@@ -82,6 +86,7 @@ function SuggestionInput({
   value: string;
   placeholder: string;
   region: SupportedRegion | "all";
+  recommended?: Suggestion[];
   onChange: (value: string) => void;
   onSelect: (suggestion: Suggestion) => void;
 }) {
@@ -89,13 +94,21 @@ function SuggestionInput({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const skipNextSearch = useRef(false);
 
   useEffect(() => {
-    const query = value.trim();
-    if (!query) {
-      setSuggestions([]);
+    if (skipNextSearch.current) {
+      skipNextSearch.current = false;
       setOpen(false);
       setLoading(false);
+      return;
+    }
+    const query = value.trim();
+    if (!query) {
+      setSuggestions(recommended);
+      setOpen(recommended.length > 0);
+      setLoading(false);
+      setActiveIndex(-1);
       return;
     }
     const controller = new AbortController();
@@ -121,9 +134,10 @@ function SuggestionInput({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [value, region]);
+  }, [value, region, recommended]);
 
   function choose(suggestion: Suggestion) {
+    skipNextSearch.current = true;
     onSelect(suggestion);
     setOpen(false);
     setSuggestions([]);
@@ -167,6 +181,7 @@ function SuggestionInput({
         <div className="suggestions" id={`${field.toLowerCase()}-suggestions`} role="listbox">
           {loading && <div className="suggestion-status"><span className="mini-spinner" /> Searching {region === "all" ? "Kolkata and Bengaluru" : region === "kolkata" ? "Kolkata" : "Bengaluru"}…</div>}
           {!loading && suggestions.length === 0 && <div className="suggestion-status">No matching stops, stations, or routes.</div>}
+          {!loading && !value.trim() && suggestions.length > 0 && <div className="suggestion-heading">Direct destinations from your selected stop</div>}
           {!loading && suggestions.map((suggestion, index) => (
             <button
               type="button"
@@ -198,6 +213,12 @@ export default function Home() {
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [location, setLocation] = useState<LocationState | null>(null);
+  const [selectedFrom, setSelectedFrom] = useState<Suggestion | null>(null);
+  const [reachable, setReachable] = useState<Suggestion[]>([]);
+  const [activeMode, setActiveMode] = useState<string | null>(null);
+  const [networkItems, setNetworkItems] = useState<NetworkItem[]>([]);
+  const [networkMessage, setNetworkMessage] = useState("");
+  const [networkLoading, setNetworkLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   useLayoutEffect(() => {
@@ -215,6 +236,20 @@ export default function Home() {
     return () => context.revert();
   }, []);
 
+  useEffect(() => {
+    if (!selectedFrom || !location || location.region === "unsupported") {
+      setReachable([]);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ placeId: selectedFrom.id, name: selectedFrom.name, region: location.region });
+    fetch(`/api/reachable?${params}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((payload: { data?: Suggestion[] }) => setReachable(payload.data || []))
+      .catch((error) => { if ((error as Error).name !== "AbortError") setReachable([]); });
+    return () => controller.abort();
+  }, [selectedFrom, location]);
+
   function chooseRegion(region: SupportedRegion) {
     const isKolkata = region === "kolkata";
     setLocation({
@@ -224,6 +259,8 @@ export default function Home() {
       modes: modesByRegion[region].map((mode) => mode.name.toUpperCase()),
     });
     setFrom("");
+    setSelectedFrom(null);
+    setReachable([]);
     setJourney(null);
     setLocationStatus("idle");
     setMessage("");
@@ -245,6 +282,8 @@ export default function Home() {
         if (!response.ok) throw new Error(data.message || "We could not resolve this location.");
         setLocation(data);
         setFrom(data.address);
+        setSelectedFrom(null);
+        setReachable([]);
         setJourney(null);
         setLocationStatus("idle");
         if (data.region === "unsupported") {
@@ -263,6 +302,25 @@ export default function Home() {
         ? "Location permission was not allowed. Choose Kolkata or Bengaluru instead."
         : "Your location is unavailable right now. Choose your city instead.");
     }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+  }
+
+  async function loadNetwork(mode: string) {
+    if (!location || location.region === "unsupported") return;
+    setActiveMode(mode);
+    setNetworkItems([]);
+    setNetworkMessage("");
+    setNetworkLoading(true);
+    try {
+      const params = new URLSearchParams({ region: location.region, mode: mode.toLowerCase() });
+      const response = await fetch(`/api/network?${params}`);
+      const payload = await response.json() as { data?: NetworkItem[]; message?: string };
+      setNetworkItems(payload.data || []);
+      setNetworkMessage(payload.message || "");
+    } catch {
+      setNetworkMessage("The transit network could not be loaded.");
+    } finally {
+      setNetworkLoading(false);
+    }
   }
 
   async function planJourney(event: FormEvent) {
@@ -333,15 +391,16 @@ export default function Home() {
                 field="FROM"
                 value={from}
                 region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
-                onChange={(value) => { setFrom(value); setJourney(null); }}
-                onSelect={(suggestion) => { setFrom(suggestion.name); setJourney(null); }}
+                onChange={(value) => { setFrom(value); setSelectedFrom(null); setReachable([]); setJourney(null); }}
+                onSelect={(suggestion) => { setFrom(suggestion.name); setSelectedFrom(suggestion); setTo(""); setJourney(null); }}
                 placeholder={location?.region === "bengaluru" ? "Majestic" : "Esplanade, Kolkata"}
               />
-              <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); }}>↕</button>
+              <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); setSelectedFrom(null); setReachable([]); }}>↕</button>
               <SuggestionInput
                 field="TO"
                 value={to}
                 region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
+                recommended={reachable}
                 onChange={(value) => { setTo(value); setJourney(null); }}
                 onSelect={(suggestion) => { setTo(suggestion.name); setJourney(null); }}
                 placeholder={location?.region === "bengaluru" ? "Indiranagar" : "Dakshineswar"}
@@ -376,7 +435,7 @@ export default function Home() {
 
       <section className="mode-section" id="coverage" data-scroll-reveal>
         <div className="section-copy"><p className="eyebrow"><span /> Your local network</p><h2>{location?.region === "kolkata" ? <>Kolkata moves<br /><em>every way.</em></> : location?.region === "bengaluru" ? <>Bengaluru,<br /><em>connected.</em></> : <>Choose a city.<br /><em>See what moves.</em></>}</h2><p>{location?.region === "kolkata" ? "Only Kolkata riders see the city’s bus, Metro, ferry, tram, and suburban rail network." : location?.region === "bengaluru" ? "Bengaluru journeys use the backend’s BMTC and BMRCL datasets—without showing Kolkata-only services." : "Share your location or choose a city. Ratroo will show only transport modes supported in that region."}</p></div>
-        {location && location.region !== "unsupported" ? <div className="mode-grid">{modesByRegion[location.region].map((mode) => <article key={mode.name} className="mode-card"><span className={`mode-icon ${mode.color}`}>{mode.icon}</span><div><h3>{mode.name}</h3><p>{mode.detail}</p></div><b>↗</b></article>)}</div> : <div className="coverage-empty"><span className="location-pulse" /><h3>Find your local network</h3><p>Use your location above, or choose Kolkata or Bengaluru manually.</p><a href="#plan">Choose a city ↑</a></div>}
+        {location && location.region !== "unsupported" ? <div><div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{mode.icon}</span><span><h3>{mode.name}</h3><p>{mode.detail}</p></span><b>↗</b></button>)}</div>{activeMode && <div className="network-panel" aria-live="polite"><div className="network-title"><div><small>{location.name.toUpperCase()} NETWORK</small><h3>{activeMode} services</h3></div><button type="button" onClick={() => setActiveMode(null)} aria-label="Close network results">×</button></div>{networkLoading ? <div className="network-state"><span className="mini-spinner" /> Loading live network data…</div> : networkItems.length ? <div className="network-list">{networkItems.map((item) => <article key={item.id}><span className={`suggestion-icon ${activeMode.toLowerCase()}`}>{activeMode.charAt(0)}</span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div></article>)}</div> : <div className="network-state"><strong>No published services yet</strong><span>{networkMessage || `The ${activeMode.toLowerCase()} dataset is not active yet.`}</span></div>}</div>}</div> : <div className="coverage-empty"><span className="location-pulse" /><h3>Find your local network</h3><p>Use your location above, or choose Kolkata or Bengaluru manually.</p><a href="#plan">Choose a city ↑</a></div>}
       </section>
 
       <section className="how-section" id="how-it-works" data-scroll-reveal>

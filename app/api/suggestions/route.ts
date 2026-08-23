@@ -1,4 +1,7 @@
-const RATROO_API = (process.env.RATROO_API_URL || "https://ratroo-backend-sams-projects-83758424.vercel.app/v1").replace(/\/$/, "");
+const RATROO_API = (process.env.RATROO_API_URL || (process.env.NODE_ENV === "development"
+  ? "http://localhost:3000/v1"
+  : "https://ratroo-backend-sams-projects-83758424.vercel.app/v1")).replace(/\/$/, "");
+const BACKEND_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 6000 : 1800;
 
 type CityRegion = "kolkata" | "bengaluru";
 type Region = CityRegion | "all";
@@ -85,7 +88,7 @@ async function backendMatches(region: CityRegion, query: string) {
     ? `${RATROO_API}/regions/bengaluru/search?${new URLSearchParams({ q: query, limit: "12" })}`
     : `${RATROO_API}/search?${new URLSearchParams({ q: query })}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1800);
+  const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
   try {
     const response = await fetch(endpoint, { headers: { "Accept": "application/json" }, signal: controller.signal });
     if (!response.ok) return [];

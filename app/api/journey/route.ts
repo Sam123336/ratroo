@@ -1,4 +1,6 @@
-const RATROO_API = (process.env.RATROO_API_URL || "https://ratroo-backend-sams-projects-83758424.vercel.app/v1").replace(/\/$/, "");
+const RATROO_API = (process.env.RATROO_API_URL || (process.env.NODE_ENV === "development"
+  ? "http://localhost:3000/v1"
+  : "https://ratroo-backend-sams-projects-83758424.vercel.app/v1")).replace(/\/$/, "");
 
 type BengaluruLeg = {
   mode: string;

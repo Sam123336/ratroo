@@ -1,5 +1,5 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
-import { forRegion, type CityRegion } from "./region-filter";
+import { forRegion, regionForResult, type CityRegion } from "./region-filter";
 
 const BACKEND_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 6000 : 1800;
 
@@ -57,16 +57,6 @@ function unwrapArray(payload: unknown): unknown[] {
 
 function readableType(type: string) {
   return type.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function regionForResult(value: Record<string, unknown>, fallback?: CityRegion): CityRegion | undefined {
-  const latitude = Number(value.latitude ?? value.lat);
-  const longitude = Number(value.longitude ?? value.lng ?? value.lon);
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    if (latitude >= 12.7 && latitude <= 13.3 && longitude >= 77.3 && longitude <= 78) return "bengaluru";
-    if (latitude >= 21 && latitude <= 27.5 && longitude >= 85 && longitude <= 90) return "kolkata";
-  }
-  return fallback;
 }
 
 function normalize(item: unknown, index: number, region?: CityRegion): Suggestion | null {

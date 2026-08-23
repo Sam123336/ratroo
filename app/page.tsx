@@ -84,6 +84,59 @@ function unwrapJourney(payload: unknown): Journey {
   return data;
 }
 
+function SplashScreen({ onFinish }: { onFinish: () => void }) {
+  const splashRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const context = gsap.context(() => {
+      if (reduced) {
+        gsap.set(".splash-reveal", { opacity: 1 });
+        const timer = window.setTimeout(onFinish, 450);
+        return () => window.clearTimeout(timer);
+      }
+
+      const timeline = gsap.timeline({ defaults: { ease: "power3.out" }, onComplete: onFinish });
+      timeline
+        .from(".splash-mark", { scale: 0.55, rotation: -12, opacity: 0, duration: 0.6 })
+        .from(".splash-name", { y: 24, opacity: 0, duration: 0.55 }, "-=0.28")
+        .from(".splash-kicker", { y: 12, opacity: 0, duration: 0.4 }, "-=0.25")
+        .from(".splash-route-track", { scaleX: 0, transformOrigin: "left center", duration: 0.72 }, "-=0.1")
+        .from(".splash-stop", { scale: 0, opacity: 0, duration: 0.3, stagger: 0.13 }, "-=0.35")
+        .fromTo(".splash-ride", { xPercent: -220, opacity: 0 }, { xPercent: 135, opacity: 1, duration: 0.9, ease: "power2.inOut" }, "-=0.35")
+        .from(".splash-city, .splash-tagline, .splash-progress", { y: 12, opacity: 0, duration: 0.42, stagger: 0.08 }, "-=0.48")
+        .to(".splash-progress span", { scaleX: 1, transformOrigin: "left center", duration: 0.65, ease: "power1.inOut" }, "-=0.34")
+        .to(splashRef.current, { clipPath: "inset(0 0 100% 0)", duration: 0.8, ease: "power4.inOut" }, "+=0.12");
+    }, splashRef);
+
+    return () => context.revert();
+  }, [onFinish]);
+
+  return (
+    <div className="ratroo-splash" ref={splashRef} role="status" aria-label="Ratroo is getting your journey ready">
+      <button className="splash-skip" type="button" onClick={onFinish}>Skip intro <span>↗</span></button>
+      <div className="splash-grid" aria-hidden="true" />
+      <div className="splash-content">
+        <p className="splash-kicker splash-reveal"><span /> Public transport, made human</p>
+        <div className="splash-wordmark splash-reveal" aria-label="Ratroo">
+          <span className="splash-mark">R</span><strong className="splash-name">ratroo</strong>
+        </div>
+        <div className="splash-route splash-reveal" aria-hidden="true">
+          <div className="splash-route-track" />
+          <span className="splash-stop splash-stop-one" />
+          <span className="splash-stop splash-stop-two" />
+          <span className="splash-stop splash-stop-three" />
+          <span className="splash-ride">RIDE <b>→</b></span>
+        </div>
+        <div className="splash-cities splash-reveal"><span className="splash-city">Kolkata</span><i>connecting</i><span className="splash-city">Bengaluru</span></div>
+        <p className="splash-tagline splash-reveal">Know the way. <em>Enjoy the ride.</em></p>
+        <div className="splash-progress splash-reveal" aria-hidden="true"><span /></div>
+      </div>
+      <p className="splash-foot splash-reveal">NO LOGIN · LIVE TRANSIT · OPEN TO EVERY RIDER</p>
+    </div>
+  );
+}
+
 function SuggestionInput({
   field,
   value,
@@ -218,6 +271,7 @@ function SuggestionInput({
 export default function Home() {
   const pageRef = useRef<HTMLElement>(null);
   const resultRef = useRef<HTMLElement>(null);
+  const [splashDone, setSplashDone] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [journey, setJourney] = useState<Journey | null>(null);
@@ -238,6 +292,7 @@ export default function Home() {
   const [message, setMessage] = useState("");
 
   useLayoutEffect(() => {
+    if (!splashDone) return;
     gsap.registerPlugin(ScrollTrigger);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) return;
@@ -250,7 +305,12 @@ export default function Home() {
       });
     }, pageRef);
     return () => context.revert();
-  }, []);
+  }, [splashDone]);
+
+  useEffect(() => {
+    document.body.style.overflow = splashDone ? "" : "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, [splashDone]);
 
   useEffect(() => {
     const region = location && location.region !== "unsupported" ? location.region : selectedFrom?.region;
@@ -268,11 +328,12 @@ export default function Home() {
   }, [selectedFrom, location]);
 
   useEffect(() => {
+    if (!splashDone) return;
     const timer = window.setTimeout(() => useMyLocation(), 450);
     return () => window.clearTimeout(timer);
     // Location is intentionally requested once; the retry button calls it again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [splashDone]);
 
   useEffect(() => {
     if (!location?.latitude || !location?.longitude || location.region === "unsupported") {
@@ -468,6 +529,7 @@ export default function Home() {
 
   return (
     <main ref={pageRef}>
+      {!splashDone && <SplashScreen onFinish={() => setSplashDone(true)} />}
       <header className="nav-shell">
         <a className="brand" href="#top" aria-label="Ratroo home"><span className="brand-mark">R</span><span>ratroo</span></a>
         <nav aria-label="Main navigation"><a href="#plan">Plan a journey</a><a href="#coverage">Coverage</a><a href="#how-it-works">How it works</a></nav>

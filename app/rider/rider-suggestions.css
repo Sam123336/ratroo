@@ -140,6 +140,123 @@
   cursor: pointer;
 }
 
+.stop-map-search {
+  position: relative;
+  z-index: 5;
+  padding: 0 24px 14px;
+}
+
+.stop-map-search label {
+  display: grid;
+  gap: 6px;
+}
+
+.stop-map-search label > span {
+  color: #59685f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.stop-map-search input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px 0 44px;
+  border: 1px solid var(--r-line);
+  border-radius: 14px;
+  outline: none;
+  background: #fff;
+  color: var(--r-ink);
+  font-size: 14px;
+  font-weight: 700;
+  background-image: radial-gradient(circle, transparent 5px, #52635a 6px, #52635a 7px, transparent 8px), linear-gradient(45deg, transparent 47%, #52635a 48%, #52635a 56%, transparent 57%);
+  background-position: 14px 14px, 27px 28px;
+  background-size: 20px 20px, 10px 10px;
+  background-repeat: no-repeat;
+}
+
+.stop-map-search input:focus {
+  border-color: var(--r-orange);
+  box-shadow: 0 0 0 4px #f2760c1c;
+}
+
+.stop-map-search-results {
+  position: absolute;
+  top: calc(100% - 6px);
+  right: 24px;
+  left: 24px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 7px;
+  border: 1px solid var(--r-line);
+  border-radius: 15px;
+  background: var(--r-card);
+  box-shadow: 0 20px 46px #14221b30;
+}
+
+.stop-map-search-results button {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--r-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stop-map-search-results button:hover {
+  background: #f1eadf;
+}
+
+.stop-map-search-results button > span:first-child {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px 11px 11px 4px;
+  background: var(--r-ink);
+  color: #fff;
+  font-weight: 800;
+}
+
+.stop-map-search-results button > span:nth-child(2) {
+  min-width: 0;
+}
+
+.stop-map-search-results strong,
+.stop-map-search-results small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stop-map-search-results strong {
+  font-size: 13px;
+}
+
+.stop-map-search-results small {
+  margin-top: 3px;
+  color: #6b776f;
+  font-size: 10px;
+}
+
+.stop-map-search-results b {
+  color: var(--r-green);
+  font-size: 10px;
+}
+
+.stop-map-search-state {
+  padding: 16px 12px;
+  color: #66736b;
+  font-size: 12px;
+}
+
 .stop-map-tools {
   display: flex;
   align-items: center;
@@ -250,6 +367,15 @@
 
   .stop-map-dialog > header {
     padding: 18px 16px 13px;
+  }
+
+  .stop-map-search {
+    padding: 0 16px 12px;
+  }
+
+  .stop-map-search-results {
+    right: 16px;
+    left: 16px;
   }
 
   .stop-map-tools {

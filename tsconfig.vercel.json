@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    ".vinext",
+    "dist",
+    "db",
+    "examples",
+    "worker",
+    "drizzle.config.ts",
+    "vite.config.ts"
+  ]
+}

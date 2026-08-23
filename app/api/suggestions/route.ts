@@ -1,7 +1,8 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
+import { forRegion, type CityRegion } from "./region-filter";
+
 const BACKEND_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 6000 : 1800;
 
-type CityRegion = "kolkata" | "bengaluru";
 type Region = CityRegion | "all";
 type Suggestion = {
   id: string;
@@ -98,35 +99,42 @@ function localMatches(region: Region, query: string) {
     .map((item) => ({ ...item, region: region === "all" ? (curated.kolkata.includes(item) ? "kolkata" : "bengaluru") : region }));
 }
 
-async function fetchBackendMatches(endpoint: string, region?: CityRegion) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+async function fetchBackendMatches(endpoint: string, signal: AbortSignal, region?: CityRegion) {
   try {
-    const response = await fetch(endpoint, { headers: { "Accept": "application/json" }, signal: controller.signal });
+    const response = await fetch(endpoint, { headers: { "Accept": "application/json" }, signal });
     if (!response.ok) return [];
     return unwrapArray(await response.json()).map((item, index) => normalize(item, index, region)).filter((item): item is Suggestion => item !== null);
   } catch {
     return [];
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
 async function backendMatches(region: CityRegion, query: string) {
   const params = new URLSearchParams({ q: query, limit: "12" });
-  if (region !== "bengaluru") {
-    return fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`, region);
+  // One deadline for the whole turn. Per-request timers let the Bengaluru path
+  // spend the budget twice over, so a keystroke could wait 3.6s against an
+  // 1800ms promise and still come back empty.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+
+  try {
+    if (region !== "bengaluru") {
+      return await fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`, controller.signal, region);
+    }
+
+    // The two indexes hold different things rather than more or less of the
+    // same: the regional one covers staged BMTC and BMRCL datasets, while
+    // canonical places (offices, landmarks, villages) exist only in the
+    // general one. Asking both at once costs no more than asking either.
+    const [regional, canonical] = await Promise.all([
+      fetchBackendMatches(`${ratrooApiUrl()}/regions/bengaluru/search?${params}`, controller.signal, region),
+      fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`, controller.signal),
+    ]);
+
+    return [...regional, ...forRegion("bengaluru", canonical)];
+  } finally {
+    clearTimeout(timer);
   }
-
-  // The regional index is intentionally narrower than the canonical search
-  // index and may return a successful empty response for real BMTC stops.
-  // An empty result is therefore not authoritative: fall back to the general
-  // index and retain only results whose coordinates place them in Bengaluru.
-  const regional = await fetchBackendMatches(`${ratrooApiUrl()}/regions/bengaluru/search?${params}`, region);
-  if (regional.length) return regional;
-
-  const canonical = await fetchBackendMatches(`${ratrooApiUrl()}/search?${params}`);
-  return canonical.filter((item) => item.region === "bengaluru");
 }
 
 export async function GET(request: Request) {

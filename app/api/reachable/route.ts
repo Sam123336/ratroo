@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     if (!response.ok) throw new Error(`Place lookup returned ${response.status}`);
     const place = deepestData(await response.json()) as { routes?: RouteRow[]; departures?: DepartureRow[] };
     const seen = new Set<string>();
-    const data: Array<{ id: string; name: string; type: string; mode: string; providerCode: string; subtitle: string }> = [];
+    const data: Array<{ id: string; name: string; type: string; mode: string; providerCode: string; subtitle: string; region?: string | null }> = [];
 
     const add = (name: string | null | undefined, route?: RouteRow | DepartureRow) => {
       const value = name?.trim();
@@ -53,6 +53,7 @@ export async function GET(request: Request) {
         mode,
         providerCode,
         subtitle: `Direct from ${origin}${providerCode !== "RATROO" ? ` · ${providerCode}` : ""}`,
+        region,
       });
     };
 

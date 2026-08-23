@@ -59,7 +59,7 @@ function normalizeBengaluru(payload: unknown, from: string, to: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { from?: string; to?: string; region?: string };
+  let body: { from?: string; to?: string; region?: string; routeId?: string };
   try {
     body = await request.json();
   } catch {
@@ -75,6 +75,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (region === "bengaluru" && body.routeId) {
+      const direct = await directRouteJourney(body.routeId, from, to);
+      if (direct) return Response.json({ data: direct });
+    }
     const endpoint = region === "bengaluru"
       ? `${RATROO_API}/regions/bengaluru/journeys?${new URLSearchParams({ from, to, limit: "5" })}`
       : `${RATROO_API}/journey`;
@@ -101,4 +105,45 @@ export async function POST(request: Request) {
       detail,
     }, { status: 503 });
   }
+}
+
+async function directRouteJourney(routeId: string, from: string, to: string) {
+  const response = await fetch(`${RATROO_API}/routes/${encodeURIComponent(routeId)}`, { headers: { "Accept": "application/json" } });
+  if (!response.ok) return null;
+  const route = deepestData(await response.json()) as Record<string, unknown>;
+  const stops = (Array.isArray(route.stops) ? route.stops : []) as Array<Record<string, unknown>>;
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const fromKey = normalize(from);
+  const toKey = normalize(to);
+  const originIndex = stops.findIndex((stop) => normalize(String(stop.name || "")) === fromKey);
+  const destinationIndex = stops.findIndex((stop) => normalize(String(stop.name || "")) === toKey);
+  if (originIndex < 0 || destinationIndex < 0 || originIndex === destinationIndex) return null;
+  const origin = stops[originIndex];
+  const destination = stops[destinationIndex];
+  const stopCount = Math.abs(destinationIndex - originIndex);
+  const durationMinutes = Math.max(4, stopCount * 2);
+  const serviceName = String(route.longName || route.routeCode || route.shortName || "BMTC service");
+  return {
+    fromInput: from,
+    toInput: to,
+    legs: [{
+      legNumber: 1,
+      mode: String(route.routeType || "BUS"),
+      fromName: String(origin.name || from),
+      toName: String(destination.name || to),
+      distanceKm: "—",
+      durationMinutes,
+      serviceName,
+      routeId: String(route.id || routeId),
+      departureTime: origin.departureTime || null,
+      arrivalTime: destination.departureTime || null,
+      instructions: `Board ${serviceName} at ${String(origin.name || from)} and ride ${stopCount} stops to ${String(destination.name || to)}.`,
+    }],
+    totalDistanceKm: "—",
+    totalDurationMinutes: durationMinutes,
+    transfersCount: 0,
+    totalFare: null,
+    confidenceScore: 0.92,
+    confidenceBadges: [String(route.providerCode || "BMTC_OFFICIAL"), "Direct route stop sequence"],
+  };
 }

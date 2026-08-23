@@ -54,6 +54,7 @@ type Suggestion = {
   mode: string;
   providerCode: string;
   subtitle: string;
+  region?: SupportedRegion;
 };
 
 type NetworkItem = { id: string; title: string; subtitle: string };
@@ -221,6 +222,7 @@ export default function Home() {
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [location, setLocation] = useState<LocationState | null>(null);
   const [selectedFrom, setSelectedFrom] = useState<Suggestion | null>(null);
+  const [selectedTo, setSelectedTo] = useState<Suggestion | null>(null);
   const [reachable, setReachable] = useState<Suggestion[]>([]);
   const [activeMode, setActiveMode] = useState<string | null>(null);
   const [networkItems, setNetworkItems] = useState<NetworkItem[]>([]);
@@ -248,12 +250,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!selectedFrom || !location || location.region === "unsupported") {
+    const region = location && location.region !== "unsupported" ? location.region : selectedFrom?.region;
+    if (!selectedFrom || !region) {
       setReachable([]);
       return;
     }
     const controller = new AbortController();
-    const params = new URLSearchParams({ placeId: selectedFrom.id, name: selectedFrom.name, region: location.region });
+    const params = new URLSearchParams({ placeId: selectedFrom.id, name: selectedFrom.name, region });
     fetch(`/api/reachable?${params}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((payload: { data?: Suggestion[] }) => setReachable(payload.data || []))
@@ -302,6 +305,7 @@ export default function Home() {
         setLocation(data);
         setFrom(data.address);
         setSelectedFrom(null);
+        setSelectedTo(null);
         setReachable([]);
         setMappedRoute(null);
         setJourney(null);
@@ -368,9 +372,10 @@ export default function Home() {
 
   async function planJourney(event: FormEvent) {
     event.preventDefault();
-    if (!location || location.region === "unsupported") {
+    const region = location && location.region !== "unsupported" ? location.region : selectedFrom?.region;
+    if (!region) {
       setStatus("error");
-      setMessage("Use your location or choose Kolkata or Bengaluru first.");
+      setMessage("Select your starting point from the suggestions so Ratroo can detect the correct network.");
       return;
     }
     if (!from.trim() || !to.trim()) {
@@ -386,7 +391,12 @@ export default function Home() {
         method: "POST",
         credentials: "omit",
         headers: { "Accept": "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ from: from.trim(), to: to.trim(), region: location.region }),
+        body: JSON.stringify({
+          from: from.trim(),
+          to: to.trim(),
+          region,
+          routeId: selectedTo?.type.endsWith("_DESTINATION") ? selectedTo.id : undefined,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -433,23 +443,23 @@ export default function Home() {
                 field="FROM"
                 value={from}
                 region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
-                onChange={(value) => { setFrom(value); setSelectedFrom(null); setReachable([]); setJourney(null); }}
-                onSelect={(suggestion) => { setFrom(suggestion.name); setSelectedFrom(suggestion); setTo(""); setJourney(null); }}
+                onChange={(value) => { setFrom(value); setSelectedFrom(null); setSelectedTo(null); setReachable([]); setJourney(null); setStatus("idle"); setMessage(""); }}
+                onSelect={(suggestion) => { setFrom(suggestion.name); setSelectedFrom(suggestion); setSelectedTo(null); setTo(""); setJourney(null); setStatus("idle"); setMessage(""); }}
                 placeholder={location?.region === "bengaluru" ? "Majestic" : "Esplanade, Kolkata"}
               />
-              <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); setSelectedFrom(null); setReachable([]); }}>↕</button>
+              <button className="swap" type="button" aria-label="Swap origin and destination" onClick={() => { setFrom(to); setTo(from); setSelectedFrom(null); setSelectedTo(null); setReachable([]); }}>↕</button>
               <SuggestionInput
                 field="TO"
                 value={to}
-                region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : "all"}
+                region={location?.region === "kolkata" || location?.region === "bengaluru" ? location.region : selectedFrom?.region || "all"}
                 recommended={reachable}
-                onChange={(value) => { setTo(value); setJourney(null); }}
-                onSelect={(suggestion) => { setTo(suggestion.name); setJourney(null); }}
+                onChange={(value) => { setTo(value); setSelectedTo(null); setJourney(null); setStatus("idle"); setMessage(""); }}
+                onSelect={(suggestion) => { setTo(suggestion.name); setSelectedTo(suggestion); setJourney(null); setStatus("idle"); setMessage(""); }}
                 placeholder={location?.region === "bengaluru" ? "Indiranagar" : "Dakshineswar"}
               />
               <button className="plan-button" type="submit" disabled={status === "loading"}>{status === "loading" ? "Planning…" : <>Find my route <span>→</span></>}</button>
             </div>
-            <p className="privacy-note"><span>✓</span> No login. Location is used only to choose the right city network.</p>
+            <p className="privacy-note"><span>✓</span> No login. GPS is optional—your selected starting stop can identify the network.</p>
           </form>
           {status === "error" && <div className="form-message" role="alert"><strong>We couldn’t plan that trip.</strong><span>{message}</span></div>}
         </div>

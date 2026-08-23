@@ -12,6 +12,7 @@ type Suggestion = {
   mode: string;
   providerCode: string;
   subtitle: string;
+  region?: CityRegion;
 };
 
 const curated: Record<CityRegion, Suggestion[]> = {
@@ -57,7 +58,17 @@ function readableType(type: string) {
   return type.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function normalize(item: unknown, index: number): Suggestion | null {
+function regionForResult(value: Record<string, unknown>, fallback?: CityRegion): CityRegion | undefined {
+  const latitude = Number(value.latitude ?? value.lat);
+  const longitude = Number(value.longitude ?? value.lng ?? value.lon);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    if (latitude >= 12.7 && latitude <= 13.3 && longitude >= 77.3 && longitude <= 78) return "bengaluru";
+    if (latitude >= 21 && latitude <= 27.5 && longitude >= 85 && longitude <= 90) return "kolkata";
+  }
+  return fallback;
+}
+
+function normalize(item: unknown, index: number, region?: CityRegion): Suggestion | null {
   if (!item || typeof item !== "object") return null;
   const value = item as Record<string, unknown>;
   const name = String(value.title || value.name || value.canonicalName || "").trim();
@@ -72,6 +83,7 @@ function normalize(item: unknown, index: number): Suggestion | null {
     mode,
     providerCode: String(value.providerCode || "RATROO"),
     subtitle,
+    region: regionForResult(value, region),
   };
 }
 
@@ -80,7 +92,8 @@ function localMatches(region: Region, query: string) {
   const pool = region === "all" ? [...curated.kolkata, ...curated.bengaluru] : curated[region];
   return pool
     .filter((item) => `${item.name} ${item.subtitle}`.toLowerCase().includes(term))
-    .sort((left, right) => Number(!left.name.toLowerCase().startsWith(term)) - Number(!right.name.toLowerCase().startsWith(term)));
+    .sort((left, right) => Number(!left.name.toLowerCase().startsWith(term)) - Number(!right.name.toLowerCase().startsWith(term)))
+    .map((item) => ({ ...item, region: region === "all" ? (curated.kolkata.includes(item) ? "kolkata" : "bengaluru") : region }));
 }
 
 async function backendMatches(region: CityRegion, query: string) {
@@ -92,7 +105,7 @@ async function backendMatches(region: CityRegion, query: string) {
   try {
     const response = await fetch(endpoint, { headers: { "Accept": "application/json" }, signal: controller.signal });
     if (!response.ok) return [];
-    return unwrapArray(await response.json()).map(normalize).filter((item): item is Suggestion => item !== null);
+    return unwrapArray(await response.json()).map((item, index) => normalize(item, index, region)).filter((item): item is Suggestion => item !== null);
   } catch {
     return [];
   } finally {

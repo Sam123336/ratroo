@@ -4,6 +4,7 @@ import { FormEvent, KeyboardEvent, lazy, Suspense, useEffect, useLayoutEffect, u
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { MappedRoute, NearbyStop } from "./components/TransitMap";
+import PublicAssistant from "./components/PublicAssistant";
 
 const TransitMap = lazy(() => import("./components/TransitMap"));
 
@@ -621,6 +622,7 @@ export default function Home() {
 
       <section className="final-cta" data-scroll-reveal><p>YOUR NEXT JOURNEY</p><h2>India moves in many ways.<br /><em>Ratroo brings them together.</em></h2><a href="#plan">Plan a public journey <span>→</span></a></section>
       <footer><a className="brand" href="#top"><span className="brand-mark">R</span><span>ratroo</span></a><p>Public transport, made human. Address data © OpenStreetMap contributors.</p><span>© 2026 Ratroo</span></footer>
+      <PublicAssistant latitude={location?.latitude} longitude={location?.longitude} locationLabel={location?.address} />
     </main>
   );
 }

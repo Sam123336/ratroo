@@ -46,6 +46,32 @@ function websiteQuestion(question: string, bengaluru: boolean) {
   return `PUBLIC WEBSITE COVERAGE: This journey is in Bengaluru/Karnataka, one of Ratroo's supported launch networks. Use the canonical journey and service tools for BMTC/BMRCL data. WBBus.in is West-Bengal-only and an empty WBBus.in result does not mean Bengaluru is unsupported. If the canonical tools find nothing, say only that no matching published route was found in Ratroo's current Bengaluru data.\n\nUSER QUESTION: ${question}`;
 }
 
+type NearbyStop = { name: string; provider: string; category: string; distanceMeters: number; routes: string[] };
+
+function nearbyStops(value: unknown): NearbyStop[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 10).map((item) => {
+    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const routes = Array.isArray(row.routes) ? row.routes : [];
+    return {
+      name: String(row.name || "").trim().slice(0, 100),
+      provider: String(row.provider || "RATROO").trim().slice(0, 50),
+      category: String(row.category || "TRANSIT_STOP").trim().slice(0, 40),
+      distanceMeters: Math.max(0, Math.round(Number(row.distanceMeters) || 0)),
+      routes: routes.slice(0, 5).map((route) => String(route && typeof route === "object" ? (route as Record<string, unknown>).name || "" : route).trim().slice(0, 60)).filter(Boolean),
+    };
+  }).filter((stop) => stop.name);
+}
+
+function questionWithNearbyStops(question: string, bengaluru: boolean, stops: NearbyStop[]) {
+  const coverage = websiteQuestion(question, bengaluru);
+  if (!stops.length) return coverage;
+  const list = stops.map((stop, index) =>
+    `${index + 1}. ${stop.name} [${stop.category}; ${stop.provider}; ${stop.distanceMeters}m; routes: ${stop.routes.join(", ") || "none published"}]`,
+  ).join("\n");
+  return `${coverage}\n\nAUTO-DETECTED NEARBY BOARDING OPTIONS (trusted Ratroo website data):\n${list}\nUse the closest suitable bus or metro stop as the origin when the user says “from here” or gives only a destination. Try these candidates in distance order. Do not claim a route unless a journey/service tool verifies the connection.`;
+}
+
 function isRouteQuestion(question: string) {
   return /(?:\bfrom\b.*\bto\b|\bto\b|→|\btheke\b|\broute\b|\bjourney\b)/i.test(question);
 }
@@ -71,6 +97,7 @@ export async function POST(request: Request) {
   const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
   const bengaluru = isBengaluruRequest(question, hasLocation ? lat : undefined, hasLocation ? lng : undefined);
   const routeQuestion = isRouteQuestion(question);
+  const stops = nearbyStops(body.nearbyStops);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 88_000);
 
@@ -78,7 +105,7 @@ export async function POST(request: Request) {
     const response = await fetch(`${ratrooApiUrl()}/assistant/ask`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ question: websiteQuestion(question, bengaluru), ...(hasLocation ? { lat, lng } : {}) }),
+      body: JSON.stringify({ question: questionWithNearbyStops(question, bengaluru, stops), ...(hasLocation ? { lat, lng } : {}) }),
       signal: controller.signal,
       cache: "no-store",
     });

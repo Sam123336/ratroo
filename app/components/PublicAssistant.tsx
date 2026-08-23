@@ -13,6 +13,13 @@ type Props = {
   latitude?: number;
   longitude?: number;
   locationLabel?: string;
+  nearbyStops?: Array<{
+    name: string;
+    provider: string;
+    category: string;
+    distanceMeters: number;
+    routes: Array<{ name: string }>;
+  }>;
 };
 
 // Bumped after removing historically saved West-Bengal-only replies for
@@ -40,7 +47,7 @@ function linkedLine(line: string, lineIndex: number, lines: string[]) {
     : part)}{lineIndex < lines.length - 1 && <br />}</span>;
 }
 
-export default function PublicAssistant({ latitude, longitude, locationLabel }: Props) {
+export default function PublicAssistant({ latitude, longitude, locationLabel, nearbyStops = [] }: Props) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -84,7 +91,7 @@ export default function PublicAssistant({ latitude, longitude, locationLabel }: 
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ question, lat: latitude, lng: longitude }),
+        body: JSON.stringify({ question, lat: latitude, lng: longitude, nearbyStops: nearbyStops.slice(0, 10) }),
       });
       const payload = await response.json().catch(() => ({})) as { data?: { answer?: string; toolCalls?: string[] }; message?: string };
       if (!response.ok || !payload.data?.answer) throw new Error(payload.message || "No answer came back.");
@@ -130,7 +137,7 @@ export default function PublicAssistant({ latitude, longitude, locationLabel }: 
         <div><span>R</span><div><small>RATROO AI</small><strong>Ask about any journey</strong></div></div>
         <div><button type="button" onClick={newChat} disabled={!messages.length} title="Start a new chat">＋</button><button type="button" onClick={() => setOpen(false)} aria-label="Close Ratroo AI">×</button></div>
       </header>
-      <div className="assistant-context"><span className={latitude != null ? "live" : ""}>●</span>{latitude != null ? `Planning from ${locationLabel || "your current location"}` : "Add your starting place in the question"}</div>
+      <div className="assistant-context"><span className={latitude != null ? "live" : ""}>●</span>{latitude != null ? `Planning from ${locationLabel || "your current location"}${nearbyStops.length ? ` · ${nearbyStops.length} nearby stops ready` : ""}` : "Add your starting place in the question"}</div>
       <div className="assistant-messages" ref={scrollRef} aria-live="polite">
         {!messages.length && <section className="assistant-intro"><div className="assistant-orbit">AI<span /></div><h2>Where do you want to go?</h2><p>Ask in English or Bengali. Ratroo checks real routes and timetables instead of guessing.</p><div>{SUGGESTIONS.map(suggestion => <button type="button" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}<span>→</span></button>)}</div></section>}
         {messages.map(message => <article className={`assistant-message ${message.role}`} key={message.id}>

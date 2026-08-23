@@ -1,0 +1,45 @@
+# Build check only — this workflow deliberately does not deploy.
+#
+# It used to run `vercel pull/build/deploy` for preview and production, which
+# duplicated the deployment Vercel's own Git integration already performs on
+# every push. The duplicate was also the only part that ever failed: it needs a
+# VERCEL_TOKEN, and every run for weeks died at `vercel pull` while the real
+# deployment succeeded beside it and the site stayed up the whole time.
+#
+# What remains is the half that earns its keep: a clean `npm ci` plus the same
+# build Vercel runs, so a broken build is caught on the PR rather than in the
+# deployment log. Deployment itself belongs to the Vercel Git integration.
+name: Build check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Vercel build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build:vercel

@@ -586,7 +586,12 @@ export default function Home() {
       {journey && (
         <section className="journey-result" ref={resultRef} aria-live="polite">
           <div className="result-heading"><div><p className="eyebrow"><span /> Recommended journey</p><h2>{journey.fromInput} <b>→</b> {journey.toInput}</h2></div><div className="confidence"><strong>{Math.round(journey.confidenceScore * 100)}%</strong><span>route confidence</span></div></div>
-          <div className="journey-summary"><div><strong>{journey.totalDurationMinutes}</strong><span>minutes</span></div><div><strong>{journey.totalDistanceKm}</strong><span>distance</span></div><div><strong>{journey.transfersCount}</strong><span>{journey.transfersCount === 1 ? "transfer" : "transfers"}</span></div><div><strong>{journey.totalFare != null ? `₹${journey.totalFare}${journey.fareIncomplete ? "+" : ""}` : "—"}</strong><span>estimated fare</span></div></div>
+          <div className="journey-summary">
+            {journey.totalDurationMinutes > 0 && <div><strong>{journey.totalDurationMinutes}</strong><span>minutes</span></div>}
+            {journey.totalDistanceKm && journey.totalDistanceKm !== "—" && <div><strong>{journey.totalDistanceKm}</strong><span>distance</span></div>}
+            {Number.isFinite(journey.transfersCount) && <div><strong>{journey.transfersCount}</strong><span>{journey.transfersCount === 1 ? "transfer" : "transfers"}</span></div>}
+            {journey.totalFare != null && Number.isFinite(journey.totalFare) && <div><strong>₹{journey.totalFare}{journey.fareIncomplete ? "+" : ""}</strong><span>estimated fare</span></div>}
+          </div>
           <ol className="legs">{journey.legs.map((leg) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{leg.mode.charAt(0)}</span><div><small>{leg.departureTime || `${leg.durationMinutes} min`} · {leg.mode.replace("_", " ")}</small><strong>{leg.serviceName || leg.instructions}</strong><p>{leg.fromName} <b>→</b> {leg.toName}</p></div></li>)}</ol>
           <p className="data-note">{journey.confidenceBadges?.join(" · ") || "Ratroo canonical transit data"}</p>
         </section>

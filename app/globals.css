@@ -124,7 +124,7 @@ h1 em { color: var(--saffron-deep); font-family: Georgia, serif; font-weight: 50
 .confidence { min-width: 135px; padding: 15px; text-align: center; background: #eaf6ef; border-radius: 16px; }
 .confidence strong { display: block; color: #087a45; font: 800 27px/1 var(--font-geist-mono), monospace; }
 .confidence span { color: #51705f; font-size: 10px; }
-.journey-summary { display: grid; grid-template-columns: repeat(4, 1fr); padding: 22px 0; border-bottom: 1px solid var(--line); }
+.journey-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); padding: 22px 0; border-bottom: 1px solid var(--line); }
 .journey-summary div + div { padding-left: 20px; border-left: 1px solid var(--line); }
 .journey-summary strong, .journey-summary span { display: block; }
 .journey-summary strong { font: 750 22px/1.2 var(--font-geist-mono), monospace; }

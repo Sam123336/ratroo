@@ -1,15 +1,8 @@
 import { cookies } from "next/headers";
 import { ratrooApiUrl } from "@/lib/ratroo-api";
+import { setRiderSession, unwrapAuthTokens } from "@/lib/rider-session";
 
 type AuthAction = "login" | "register" | "logout";
-
-function unwrap(value: unknown): Record<string, unknown> {
-  let current = value;
-  for (let index = 0; index < 3; index += 1) {
-    if (current && typeof current === "object" && "data" in current) current = (current as { data: unknown }).data;
-  }
-  return (current && typeof current === "object" ? current : {}) as Record<string, unknown>;
-}
 
 export async function POST(request: Request) {
   try {
@@ -32,17 +25,13 @@ export async function POST(request: Request) {
       body: JSON.stringify({ email: body.email, password: body.password, displayName: body.displayName }),
     });
     const payload = await response.json().catch(() => ({}));
-    const data = unwrap(payload);
-    if (!response.ok || typeof data.accessToken !== "string") {
+    const data = unwrapAuthTokens(payload);
+    if (!response.ok || !data) {
       const error = payload as { message?: string };
       return Response.json({ message: error.message || "Incorrect email or password." }, { status: response.status || 500 });
     }
 
-    const secure = process.env.NODE_ENV === "production";
-    jar.set("ratroo_rider_access", data.accessToken, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: Number(data.expiresIn || 900) });
-    if (typeof data.refreshToken === "string") {
-      jar.set("ratroo_rider_refresh", data.refreshToken, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 30 * 24 * 60 * 60 });
-    }
+    setRiderSession(jar, data);
     return Response.json({ data: { user: data.user } });
   } catch (error) {
     const message = error instanceof Error && error.message.includes("RATROO_API_URL")

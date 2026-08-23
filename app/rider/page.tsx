@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import StopMapPicker from "./StopMapPicker";
 
 type Vehicle = { id: string; registrationNumber: string; vehicleType: string; displayName?: string; reviewState: string; reviewNote?: string };
@@ -31,6 +32,23 @@ const statusCopy: Record<string, [string, string]> = {
   PUBLISHED: ["Live in Ratroo", "Riders can now discover this service."],
   WITHDRAWN: ["Hidden", "This service is not visible to riders."],
 };
+
+const googleOAuthEnabled = process.env.NEXT_PUBLIC_RIDER_GOOGLE_OAUTH_ENABLED === "true";
+
+function oauthErrorMessage() {
+  if (typeof window === "undefined") return "";
+  const error = new URLSearchParams(window.location.search).get("oauth_error");
+  if (!error) return "";
+  const messages: Record<string, string> = {
+    cancelled: "Google sign-in was cancelled.",
+    not_configured: "Google sign-in is not configured yet.",
+    invalid_state: "That sign-in request expired. Please try again.",
+    token_exchange: "Google could not complete sign-in. Please try again.",
+    backend_rejected: "Ratroo could not connect that Google account.",
+    temporarily_unavailable: "Google sign-in is temporarily unavailable.",
+  };
+  return messages[error] || "Google sign-in could not be completed.";
+}
 
 function StopSearchInput({ index, stop, label, placeholder, onChange, onSelect }: {
   index: number;
@@ -125,7 +143,7 @@ export default function RiderPortal() {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(oauthErrorMessage);
   const [stops, setStops] = useState<Stop[]>([{ stopName: "" }, { stopName: "" }]);
   const [mapStopIndex, setMapStopIndex] = useState<number | null>(null);
 
@@ -147,7 +165,11 @@ export default function RiderPortal() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("oauth_error") || params.has("oauth")) window.history.replaceState({}, "", "/rider");
+    queueMicrotask(() => void load());
+  }, []);
 
   async function auth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setMessage("");
@@ -212,9 +234,10 @@ export default function RiderPortal() {
 
   if (!signedIn) return (
     <main className="rider-auth">
-      <section className="rider-auth-story"><a href="/" className="rider-brand"><b>R</b> ratroo rider</a><p className="eyebrow">For local transport partners</p><h1>Your route can help <em>thousands</em> travel better.</h1><p>Add your bus, auto, e-rickshaw or shared taxi in four simple steps. We check everything before riders see it.</p><div className="auth-promise"><span>1</span> Register <i>→</i><span>2</span> Add vehicle <i>→</i><span>3</span> Add stops <i>→</i><span>4</span> Send</div></section>
+      <section className="rider-auth-story"><Link href="/" className="rider-brand"><b>R</b> ratroo rider</Link><p className="eyebrow">For local transport partners</p><h1>Your route can help <em>thousands</em> travel better.</h1><p>Add your bus, auto, e-rickshaw or shared taxi in four simple steps. We check everything before riders see it.</p><div className="auth-promise"><span>1</span> Register <i>→</i><span>2</span> Add vehicle <i>→</i><span>3</span> Add stops <i>→</i><span>4</span> Send</div></section>
       <section className="rider-auth-card">
         <p className="eyebrow">Welcome</p><h2>{authMode === "login" ? "Continue your registration" : "Create your operator account"}</h2>
+        {googleOAuthEnabled && <><Link className="oauth-button" href="/api/rider/oauth/google/start" prefetch={false}><span>G</span> Continue with Google</Link><div className="auth-divider"><span>or use email</span></div></>}
         <form onSubmit={auth}>
           {authMode === "register" && <label>Your name<input name="displayName" minLength={2} required placeholder="What should we call you?" /></label>}
           <label>Email address<input name="email" type="email" required placeholder="you@example.com" /></label>
@@ -229,7 +252,7 @@ export default function RiderPortal() {
 
   return (
     <main className="rider-shell">
-      <header><a href="/" className="rider-brand"><b>R</b> ratroo rider</a><div><span className="secure-dot" /> Your details are private until approved</div><button onClick={async () => { await fetch("/api/rider/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); location.reload(); }}>Sign out</button></header>
+      <header><Link href="/" className="rider-brand"><b>R</b> ratroo rider</Link><div><span className="secure-dot" /> Your details are private until approved</div><button onClick={async () => { await fetch("/api/rider/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }); location.reload(); }}>Sign out</button></header>
       <section className="rider-intro"><div><p className="eyebrow">Partner registration</p><h1>Put your local service <em>on the map.</em></h1></div><p>Complete one small step at a time. You can stop and return later.</p></section>
       <nav className="rider-steps" aria-label="Registration steps">
         {["About you", "Your vehicle", "Stops & route", "Send for checking"].map((label, index) => <button key={label} className={step === index + 1 ? "active" : completed[index] ? "done" : ""} onClick={() => setStep(index + 1)}><span>{completed[index] ? "✓" : index + 1}</span><small>Step {index + 1}</small><b>{label}</b></button>)}
@@ -245,7 +268,7 @@ export default function RiderPortal() {
         </div>
       </section>
       {mapStopIndex != null && stops[mapStopIndex] && <StopMapPicker stopName={stops[mapStopIndex].stopName} latitude={stops[mapStopIndex].latitude} longitude={stops[mapStopIndex].longitude} onClose={() => setMapStopIndex(null)} onConfirm={selection => { const selectedStop = stops[mapStopIndex]; setStops(rows => rows.map((row, rowIndex) => rowIndex === mapStopIndex ? { ...row, ...selection, stopName: selection.stopName || row.stopName } : row)); setMapStopIndex(null); setMessage(`${selection.stopName || selectedStop.stopName || "Stop"} pinned on the map.`); }} />}
-      <footer><b>Ratroo Rider</b><span>Built for the people who keep our cities moving.</span><a href="/">Open public journey planner ↗</a></footer>
+      <footer><b>Ratroo Rider</b><span>Built for the people who keep our cities moving.</span><Link href="/">Open public journey planner ↗</Link></footer>
     </main>
   );
 }

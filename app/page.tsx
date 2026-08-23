@@ -1,8 +1,11 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import type { MappedRoute, NearbyStop } from "./components/TransitMap";
+
+const TransitMap = lazy(() => import("./components/TransitMap"));
 
 type JourneyLeg = {
   legNumber: number;
@@ -15,6 +18,7 @@ type JourneyLeg = {
   departureTime?: string | null;
   arrivalTime?: string | null;
   instructions: string;
+  routeId?: string;
 };
 
 type Journey = {
@@ -38,6 +42,9 @@ type LocationState = {
   latitude?: number;
   longitude?: number;
   modes: string[];
+  routeCount?: number;
+  stopCount?: number;
+  coverageMethod?: string;
 };
 
 type Suggestion = {
@@ -219,6 +226,10 @@ export default function Home() {
   const [networkItems, setNetworkItems] = useState<NetworkItem[]>([]);
   const [networkMessage, setNetworkMessage] = useState("");
   const [networkLoading, setNetworkLoading] = useState(false);
+  const [nearby, setNearby] = useState<NearbyStop[]>([]);
+  const [nearbyRadius, setNearbyRadius] = useState(0);
+  const [mappedRoute, setMappedRoute] = useState<MappedRoute | null>(null);
+  const [routeMapLoading, setRouteMapLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   useLayoutEffect(() => {
@@ -250,21 +261,29 @@ export default function Home() {
     return () => controller.abort();
   }, [selectedFrom, location]);
 
-  function chooseRegion(region: SupportedRegion) {
-    const isKolkata = region === "kolkata";
-    setLocation({
-      region,
-      name: isKolkata ? "Kolkata" : "Bengaluru",
-      address: isKolkata ? "Kolkata, West Bengal" : "Bengaluru, Karnataka",
-      modes: modesByRegion[region].map((mode) => mode.name.toUpperCase()),
-    });
-    setFrom("");
-    setSelectedFrom(null);
-    setReachable([]);
-    setJourney(null);
-    setLocationStatus("idle");
-    setMessage("");
-  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => useMyLocation(), 450);
+    return () => window.clearTimeout(timer);
+    // Location is intentionally requested once; the retry button calls it again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!location?.latitude || !location?.longitude || location.region === "unsupported") {
+      setNearby([]);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ lat: String(location.latitude), lng: String(location.longitude) });
+    fetch(`/api/nearby?${params}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((payload: { data?: NearbyStop[]; radiusMeters?: number }) => {
+        setNearby(payload.data || []);
+        setNearbyRadius(Number(payload.radiusMeters || 0));
+      })
+      .catch((error) => { if ((error as Error).name !== "AbortError") setNearby([]); });
+    return () => controller.abort();
+  }, [location]);
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -284,6 +303,7 @@ export default function Home() {
         setFrom(data.address);
         setSelectedFrom(null);
         setReachable([]);
+        setMappedRoute(null);
         setJourney(null);
         setLocationStatus("idle");
         if (data.region === "unsupported") {
@@ -312,6 +332,10 @@ export default function Home() {
     setNetworkLoading(true);
     try {
       const params = new URLSearchParams({ region: location.region, mode: mode.toLowerCase() });
+      if (location.latitude && location.longitude) {
+        params.set("lat", String(location.latitude));
+        params.set("lng", String(location.longitude));
+      }
       const response = await fetch(`/api/network?${params}`);
       const payload = await response.json() as { data?: NetworkItem[]; message?: string };
       setNetworkItems(payload.data || []);
@@ -320,6 +344,25 @@ export default function Home() {
       setNetworkMessage("The transit network could not be loaded.");
     } finally {
       setNetworkLoading(false);
+    }
+  }
+
+  async function loadRoute(routeId: string) {
+    setRouteMapLoading(true);
+    try {
+      const params = new URLSearchParams({ routeId });
+      if (location?.latitude && location?.longitude) {
+        params.set("lat", String(location.latitude));
+        params.set("lng", String(location.longitude));
+      }
+      const response = await fetch(`/api/route-map?${params}`);
+      const payload = await response.json() as { data?: MappedRoute; message?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.message || "Route map unavailable");
+      setMappedRoute(payload.data);
+    } catch {
+      setNetworkMessage("This service has no ordered stop coordinates yet.");
+    } finally {
+      setRouteMapLoading(false);
     }
   }
 
@@ -350,7 +393,10 @@ export default function Home() {
         const details = payload as { message?: string; detail?: string; error?: { message?: string } };
         throw new Error(details.message || details.error?.message || details.detail || "Ratroo could not plan this journey yet.");
       }
-      setJourney(unwrapJourney(payload));
+      const planned = unwrapJourney(payload);
+      setJourney(planned);
+      const routeId = planned.legs.find((leg) => leg.routeId)?.routeId;
+      if (routeId) void loadRoute(routeId);
       setStatus("idle");
       window.setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
     } catch (error) {
@@ -378,11 +424,7 @@ export default function Home() {
             <button className="locate-button" type="button" onClick={useMyLocation} disabled={locationStatus === "loading"}>
               <span className="location-pulse" /> {locationStatus === "loading" ? "Finding your location…" : "Use my current location"}
             </button>
-            <span>or</span>
-            <div className="city-switch" aria-label="Choose a supported city">
-              <button type="button" className={location?.region === "kolkata" ? "active" : ""} onClick={() => chooseRegion("kolkata")}>Kolkata</button>
-              <button type="button" className={location?.region === "bengaluru" ? "active" : ""} onClick={() => chooseRegion("bengaluru")}>Bengaluru</button>
-            </div>
+            <span className="auto-coverage">Coverage is detected automatically from the backend polygon</span>
           </div>
           {location && <div className={`location-result ${location.region}`} data-hero-reveal><span>●</span><div><small>{location.region === "unsupported" ? "CURRENT LOCATION · NOT COVERED YET" : `CURRENT LOCATION · ${location.name.toUpperCase()}`}</small><strong>{location.address}</strong></div></div>}
           <form className="planner-card" id="plan" onSubmit={planJourney} data-hero-reveal>
@@ -430,12 +472,20 @@ export default function Home() {
       )}
 
       <section className="trust-strip" aria-label="Ratroo benefits" data-scroll-reveal>
-        <div><strong>{location?.region === "kolkata" ? "5" : location?.region === "bengaluru" ? "2" : "—"}</strong><span>Modes near you<br />{location?.region === "kolkata" ? "Bus · Metro · Ferry · Tram · Rail" : location?.region === "bengaluru" ? "BMTC Bus · Namma Metro" : "Choose a city to see its network"}</span></div><div><strong>2</strong><span>Launch cities<br />Kolkata · Bengaluru</span></div><div><strong>0</strong><span>Sign-ups needed<br />Open to every rider</span></div>
+        <div><strong>{location?.modes.length || "—"}</strong><span>Modes near you<br />{location?.modes.length ? location.modes.map((mode) => mode.replace("SUBURBAN_", "")).join(" · ") : "Allow location to see your network"}</span></div><div><strong>{location?.routeCount?.toLocaleString() || "—"}</strong><span>Mapped services<br />From your detected coverage area</span></div><div><strong>0</strong><span>Sign-ups needed<br />Open to every rider</span></div>
       </section>
 
       <section className="mode-section" id="coverage" data-scroll-reveal>
-        <div className="section-copy"><p className="eyebrow"><span /> Your local network</p><h2>{location?.region === "kolkata" ? <>Kolkata moves<br /><em>every way.</em></> : location?.region === "bengaluru" ? <>Bengaluru,<br /><em>connected.</em></> : <>Choose a city.<br /><em>See what moves.</em></>}</h2><p>{location?.region === "kolkata" ? "Only Kolkata riders see the city’s bus, Metro, ferry, tram, and suburban rail network." : location?.region === "bengaluru" ? "Bengaluru journeys use the backend’s BMTC and BMRCL datasets—without showing Kolkata-only services." : "Share your location or choose a city. Ratroo will show only transport modes supported in that region."}</p></div>
-        {location && location.region !== "unsupported" ? <div><div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{mode.icon}</span><span><h3>{mode.name}</h3><p>{mode.detail}</p></span><b>↗</b></button>)}</div>{activeMode && <div className="network-panel" aria-live="polite"><div className="network-title"><div><small>{location.name.toUpperCase()} NETWORK</small><h3>{activeMode} services</h3></div><button type="button" onClick={() => setActiveMode(null)} aria-label="Close network results">×</button></div>{networkLoading ? <div className="network-state"><span className="mini-spinner" /> Loading live network data…</div> : networkItems.length ? <div className="network-list">{networkItems.map((item) => <article key={item.id}><span className={`suggestion-icon ${activeMode.toLowerCase()}`}>{activeMode.charAt(0)}</span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div></article>)}</div> : <div className="network-state"><strong>No published services yet</strong><span>{networkMessage || `The ${activeMode.toLowerCase()} dataset is not active yet.`}</span></div>}</div>}</div> : <div className="coverage-empty"><span className="location-pulse" /><h3>Find your local network</h3><p>Use your location above, or choose Kolkata or Bengaluru manually.</p><a href="#plan">Choose a city ↑</a></div>}
+        <div className="section-copy"><p className="eyebrow"><span /> Live around you</p><h2>{location && location.region !== "unsupported" ? <>{location.name}<br /><em>on the map.</em></> : <>Your position.<br /><em>Your network.</em></>}</h2><p>{location && location.region !== "unsupported" ? `Ratroo found ${nearby.length} nearby stops using the same expanding-radius service as the mobile app.` : "Allow location access once. Ratroo uses the backend coverage polygon—not a manual city switch—to identify the right network."}</p></div>
+        {location && location.region !== "unsupported" && location.latitude && location.longitude ? <div className="coverage-live">
+          <Suspense fallback={<div className="transit-map-shell"><div className="map-loading"><span className="mini-spinner" /> Loading the OpenStreetMap view…</div></div>}><TransitMap latitude={location.latitude} longitude={location.longitude} address={location.address} nearby={nearby} route={mappedRoute} /></Suspense>
+          <div className="nearby-board">
+            <div className="nearby-board-title"><div><small>NEARBY NOW</small><h3>{mappedRoute ? mappedRoute.name : `${nearby.length} stops within ${nearbyRadius < 1000 ? `${nearbyRadius} m` : `${Math.round(nearbyRadius / 1000)} km`}`}</h3></div>{routeMapLoading && <span className="mini-spinner" />}</div>
+            <div className="nearby-stops">{nearby.slice(0, 7).map((stop) => <article key={stop.id}><div><strong>{stop.name}</strong><small>{stop.provider} · {stop.distanceMeters < 1000 ? `${stop.distanceMeters} m` : `${(stop.distanceMeters / 1000).toFixed(1)} km`} away</small></div><div className="route-badges">{stop.routes.slice(0, 3).map((route) => <button type="button" key={route.id} onClick={() => loadRoute(route.id)}>{route.name}</button>)}</div></article>)}</div>
+          </div>
+          <div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{mode.icon}</span><span><h3>{mode.name}</h3><p>{mode.detail}</p></span><b>↗</b></button>)}</div>
+          {activeMode && <div className="network-panel" aria-live="polite"><div className="network-title"><div><small>{location.name.toUpperCase()} · NEARBY NETWORK</small><h3>{activeMode} services</h3></div><button type="button" onClick={() => setActiveMode(null)} aria-label="Close network results">×</button></div>{networkLoading ? <div className="network-state"><span className="mini-spinner" /> Loading live network data…</div> : networkItems.length ? <div className="network-list">{networkItems.map((item) => <button type="button" key={item.id} onClick={() => activeMode === "Bus" && loadRoute(item.id)} className={activeMode === "Bus" ? "route-service" : "network-service"}><span className={`suggestion-icon ${activeMode.toLowerCase()}`}>{activeMode.charAt(0)}</span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div>{activeMode === "Bus" && <b>Map →</b>}</button>)}</div> : <div className="network-state"><strong>No published services yet</strong><span>{networkMessage || `The ${activeMode.toLowerCase()} dataset is not active yet.`}</span></div>}</div>}
+        </div> : <div className="coverage-empty"><span className="location-pulse" /><h3>{locationStatus === "loading" ? "Finding your network…" : "Location powers this map"}</h3><p>{location?.region === "unsupported" ? "Ratroo does not have a coverage polygon for this location yet." : "Allow your location to load nearby stops, routes, and the correct regional services automatically."}</p><button type="button" onClick={useMyLocation}>Try location again</button></div>}
       </section>
 
       <section className="how-section" id="how-it-works" data-scroll-reveal>

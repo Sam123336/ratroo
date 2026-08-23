@@ -26,13 +26,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const region = url.searchParams.get("region");
   const mode = (url.searchParams.get("mode") || "").toLowerCase();
+  const lat = Number(url.searchParams.get("lat"));
+  const lng = Number(url.searchParams.get("lng"));
   if ((region !== "kolkata" && region !== "bengaluru") || !mode) {
     return Response.json({ message: "A supported region and mode are required." }, { status: 400 });
   }
 
   const regionSlug = region === "kolkata" ? "west-bengal" : "bengaluru";
   let endpoint: string | null = null;
-  if (mode === "bus") endpoint = `${RATROO_API}/regions/${regionSlug}/bus/routes`;
+  const useNearbyBus = mode === "bus" && Number.isFinite(lat) && Number.isFinite(lng);
+  if (useNearbyBus) endpoint = `${RATROO_API}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: "5000" })}`;
+  else if (mode === "bus") endpoint = `${RATROO_API}/regions/${regionSlug}/bus/routes`;
   else if (mode === "metro") endpoint = `${RATROO_API}/regions/${regionSlug}/metro/lines`;
   else if (region === "kolkata" && ["tram", "ferry", "rail"].includes(mode)) {
     endpoint = `${RATROO_API}/search?${new URLSearchParams({ q: mode })}`;
@@ -46,7 +50,26 @@ export async function GET(request: Request) {
     if (!response.ok) {
       return Response.json({ data: [], status: "development", message: `${mode} APIs are under development.` });
     }
-    const data = unwrapArray(payload).map(present).slice(0, 16);
+    let data = unwrapArray(payload).map(present).slice(0, 24);
+    if (useNearbyBus) {
+      const seen = new Set<string>();
+      data = unwrapArray(payload).flatMap((item) => {
+        const stop = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+        const routes = Array.isArray(stop.routes) ? stop.routes : [];
+        return routes.map((route) => {
+          const row = (route && typeof route === "object" ? route : {}) as Record<string, unknown>;
+          const id = String(row.id || "");
+          if (!id || seen.has(id)) return null;
+          seen.add(id);
+          const distance = Number(stop.distanceMeters || 0);
+          return {
+            id,
+            title: String(row.name || "Bus service"),
+            subtitle: `${String(stop.name || "Nearby stop")} · ${distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`} away`,
+          };
+        });
+      }).filter((item): item is { id: string; title: string; subtitle: string } => item !== null).slice(0, 24);
+    }
     return Response.json({
       data,
       status: data.length ? "active" : "empty",

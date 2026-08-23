@@ -1,6 +1,12 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
 import { hasCoordinates, regionForResult } from "../suggestions/region-filter";
 
+/** City centres and how far out each still counts as that city's network. */
+const REGION_CENTRE: Record<"kolkata" | "bengaluru", { lat: number; lng: number; radiusKm: number }> = {
+  kolkata: { lat: 22.5726, lng: 88.3639, radiusKm: 40 },
+  bengaluru: { lat: 12.9716, lng: 77.5946, radiusKm: 40 },
+};
+
 function unwrapArray(payload: unknown): unknown[] {
   let current = payload;
   for (let index = 0; index < 3; index += 1) {
@@ -41,7 +47,18 @@ export async function GET(request: Request) {
   let endpoint: string | null = null;
   const useNearbyBus = mode === "bus" && Number.isFinite(lat) && Number.isFinite(lng);
   if (useNearbyBus) endpoint = `${ratrooApiUrl()}/stops/nearby?${new URLSearchParams({ lat: String(lat), lng: String(lng), radius: "5000" })}`;
-  else if (mode === "bus") endpoint = `${ratrooApiUrl()}/regions/${regionSlug}/bus/routes`;
+  else if (mode === "bus") {
+    // A region slug is a whole state. Without a point, "kolkata" listed NBSTC's
+    // Alipurduar-Bagdogra services — real West Bengal routes, 600 km from the
+    // city named at the top of the page. The city centre scopes it to services
+    // that actually call there.
+    const centre = REGION_CENTRE[region];
+    endpoint = `${ratrooApiUrl()}/regions/${regionSlug}/bus/routes?${new URLSearchParams({
+      lat: String(centre.lat),
+      lng: String(centre.lng),
+      radiusKm: String(centre.radiusKm),
+    })}`;
+  }
   else if (mode === "metro") endpoint = `${ratrooApiUrl()}/regions/${regionSlug}/metro/lines`;
   // These three have no network endpoint, so they fall back to a name search
   // for the mode word. That matches "Railway Station" anywhere in India, which

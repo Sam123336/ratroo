@@ -8,6 +8,15 @@ import PublicAssistant from "./components/PublicAssistant";
 
 const TransitMap = lazy(() => import("./components/TransitMap"));
 
+/** One way to cover a first or last mile, from the planner. */
+type JourneyLegOption = {
+  mode: "WALK" | "AUTO";
+  durationMinutes: number;
+  recommended: boolean;
+  label: string;
+  isEstimate: boolean;
+};
+
 type JourneyLeg = {
   legNumber: number;
   mode: string;
@@ -20,6 +29,8 @@ type JourneyLeg = {
   arrivalTime?: string | null;
   instructions: string;
   routeId?: string;
+  /** Present on the first and last legs only — how to cover that mile. */
+  options?: JourneyLegOption[];
 };
 
 type Journey = {
@@ -83,6 +94,39 @@ type Suggestion = {
 
 type NetworkItem = { id: string; title: string; subtitle: string };
 const EMPTY_SUGGESTIONS: Suggestion[] = [];
+
+/**
+ * The mode art, shared with the Flutter app's `assets/brand`.
+ *
+ * These replaced a coloured square holding a single letter — "B" for Bus, "M"
+ * for Metro. Riders scanning for their mode read a picture of the vehicle far
+ * faster than an initial, and "B" and "M" are ambiguous the moment a region
+ * has both Bus and Bike, or Metro and Monorail.
+ *
+ * Only files with real transparency are used: `taxi.png` and `e-riska.png` in
+ * the app bundle are flattened onto black and would render as black boxes on
+ * this cream background.
+ */
+/** Journey-leg art, keyed by the planner's own mode vocabulary. */
+const LEG_ART: Record<string, string> = {
+  BUS: "/modes/mode_bus.png",
+  METRO: "/modes/mode_rail.png",
+  RAIL: "/modes/mode_rail.png",
+  SUBURBAN_RAIL: "/modes/mode_rail.png",
+  FERRY: "/modes/mode_ferry.png",
+  TRAM: "/modes/mode_tram.png",
+  AUTO: "/modes/auto.png",
+  // WALK has no vehicle, so it keeps a glyph.
+};
+
+const MODE_ART: Record<string, string> = {
+  Bus: "/modes/mode_bus.png",
+  Metro: "/modes/mode_rail.png",
+  Rail: "/modes/mode_rail.png",
+  Ferry: "/modes/mode_ferry.png",
+  Tram: "/modes/mode_tram.png",
+  Auto: "/modes/auto.png",
+};
 
 const modesByRegion = {
   kolkata: [
@@ -672,7 +716,7 @@ export default function Home() {
             {Number.isFinite(journey.transfersCount) && <div><strong>{journey.transfersCount}</strong><span>{journey.transfersCount === 1 ? "transfer" : "transfers"}</span></div>}
             {journey.totalFare != null && Number.isFinite(journey.totalFare) && <div><strong>₹{journey.totalFare}{journey.fareIncomplete ? "+" : ""}</strong><span>estimated fare</span></div>}
           </div>
-          <ol className="legs">{journey.legs.map((leg) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{leg.mode.charAt(0)}</span><div><small>{leg.departureTime || `${leg.durationMinutes} min`} · {leg.mode.replace("_", " ")}</small><strong>{leg.serviceName || leg.instructions}</strong><p>{leg.fromName} <b>→</b> {leg.toName}</p></div></li>)}</ol>
+          <ol className="legs">{journey.legs.map((leg) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{LEG_ART[leg.mode] ? <img src={LEG_ART[leg.mode]} alt="" width={30} height={30} loading="lazy" decoding="async" /> : leg.mode === "WALK" ? "\u2b21" : leg.mode.charAt(0)}</span><div><small>{leg.departureTime || `${leg.durationMinutes} min`} · {leg.mode === "AUTO" ? "auto / bike taxi" : leg.mode.replace("_", " ").toLowerCase()}</small><strong>{leg.serviceName || leg.instructions}</strong><p>{leg.fromName} <b>→</b> {leg.toName}</p>{leg.options && leg.options.length > 1 && <div className="leg-options">{leg.options.map((option) => <span key={option.mode} className={option.recommended ? "picked" : ""}>{LEG_ART[option.mode] && <img src={LEG_ART[option.mode]} alt="" width={18} height={18} loading="lazy" />}{option.label} · {option.durationMinutes} min{option.isEstimate ? "*" : ""}</span>)}<em>* estimated from distance — Ratroo has no fare or arrival feed for hailed rides</em></div>}</div></li>)}</ol>
           <p className="data-note">{journey.confidenceBadges?.join(" · ") || "Ratroo canonical transit data"}</p>
         </section>
       )}
@@ -689,7 +733,9 @@ export default function Home() {
             <div className="nearby-board-title"><div><small>NEARBY NOW</small><h3>{mappedRoute ? mappedRoute.name : `${nearby.length} stops within ${nearbyRadius < 1000 ? `${nearbyRadius} m` : `${Math.round(nearbyRadius / 1000)} km`}`}</h3></div>{routeMapLoading && <span className="mini-spinner" />}</div>
             <div className="nearby-stops">{nearby.slice(0, 7).map((stop) => <article key={stop.id}><div><strong>{stop.name}</strong><small>{stop.provider} · {stop.distanceMeters < 1000 ? `${stop.distanceMeters} m` : `${(stop.distanceMeters / 1000).toFixed(1)} km`} away</small></div><div className="route-badges">{stop.routes.slice(0, 3).map((route) => <button type="button" key={route.id} onClick={() => loadRoute(route.id)}>{route.name}</button>)}</div></article>)}</div>
           </div>
-          <div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{mode.icon}</span><span><h3>{mode.name}</h3><p>{mode.detail}</p></span><b>↗</b></button>)}</div>
+          <div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{MODE_ART[mode.name]
+              ? <img src={MODE_ART[mode.name]} alt="" width={44} height={44} loading="lazy" decoding="async" />
+              : mode.icon}</span><span><h3>{mode.name}</h3><p>{mode.detail}</p></span><b>↗</b></button>)}</div>
           {activeMode && <div className="network-panel" aria-live="polite"><div className="network-title"><div><small>{location.name.toUpperCase()} · NEARBY NETWORK</small><h3>{activeMode} services</h3></div><button type="button" onClick={() => setActiveMode(null)} aria-label="Close network results">×</button></div>{networkLoading ? <div className="network-state"><span className="mini-spinner" /> Loading live network data…</div> : networkItems.length ? <div className="network-list">{networkItems.map((item) => <button type="button" key={item.id} onClick={() => activeMode === "Bus" && loadRoute(item.id)} className={activeMode === "Bus" ? "route-service" : "network-service"}><span className={`suggestion-icon ${activeMode.toLowerCase()}`}>{activeMode.charAt(0)}</span><div><strong>{item.title}</strong><small>{item.subtitle}</small></div>{activeMode === "Bus" && <b>Map →</b>}</button>)}</div> : <div className="network-state"><strong>No published services yet</strong><span>{networkMessage || `The ${activeMode.toLowerCase()} dataset is not active yet.`}</span></div>}</div>}
         </div> : <div className="coverage-empty"><span className="location-pulse" /><h3>{locationStatus === "loading" ? "Finding your network…" : "Location powers this map"}</h3><p>{location?.region === "unsupported" ? "Ratroo does not have a coverage polygon for this location yet." : "Allow your location to load nearby stops, routes, and the correct regional services automatically."}</p><button type="button" onClick={useMyLocation}>Try location again</button></div>}
       </section>

@@ -133,6 +133,20 @@ h1 em { color: var(--saffron-deep); font-family: Georgia, serif; font-weight: 50
 .legs li { position: relative; display: flex; gap: 16px; padding: 8px 0 22px; }
 .legs li:not(:last-child)::after { content: ""; position: absolute; left: 18px; top: 48px; bottom: 0; width: 2px; background: #d8d0c2; }
 .leg-icon { position: relative; z-index: 1; flex: 0 0 38px; height: 38px; display: grid; place-items: center; color: white; background: #64748b; border-radius: 12px; font: 800 12px/1 var(--font-geist-mono), monospace; }
+/* A tinted wash instead of a saturated block, so photographic vehicle art
+   reads against it. WALK keeps the solid chip — it has no vehicle. */
+.leg-icon:has(img) { background: #f1ece2; }
+.leg-icon img { width: 32px; height: 32px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(24,18,8,.25)); }
+
+/* The walk-or-ride choice on a first/last mile. Both are shown; the
+   recommended one is marked, because a 5 km walk to the first stop is a
+   warning, not a plan — and a rider with luggage may still prefer the ride at
+   800 m. */
+.leg-options { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.leg-options span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border: 1px solid #ded6c7; border-radius: 999px; background: #fffdf8; color: #5d6660; font-size: 11px; font-weight: 700; }
+.leg-options span.picked { border-color: #e7770f; background: #fff4e3; color: #8a4c05; }
+.leg-options img { width: 18px; height: 18px; object-fit: contain; }
+.leg-options em { flex-basis: 100%; color: #8a8378; font-size: 10px; font-style: normal; line-height: 1.4; }
 .leg-icon.bus { background: #3b82f6; } .leg-icon.metro, .leg-icon.suburban_rail { background: #7c3aed; } .leg-icon.ferry { background: #0891b2; }
 .legs small, .legs strong, .legs p { display: block; }
 .legs small { color: #837b70; font: 700 10px/1.4 var(--font-geist-mono), monospace; text-transform: uppercase; }
@@ -175,9 +189,19 @@ h1 em { color: var(--saffron-deep); font-family: Georgia, serif; font-weight: 50
 .mode-card h3 { margin: 0; font-size: 21px; }
 .mode-card p { margin: 5px 0 0; color: #727a73; font-size: 11px; }
 .mode-card > b { align-self: start; font-size: 18px; }
-.mode-icon { align-self: start; width: 42px; height: 42px; display: grid; place-items: center; color: white; border-radius: 13px 13px 13px 4px; font: 800 13px/1 var(--font-geist-mono), monospace; }
+/* Sized up from 42px: the tile now holds a vehicle rather than one letter,
+   and a bus at 42px is a smudge. The tinted background is kept as a soft wash
+   so the modes stay colour-coded, with the art sitting proud of it. */
+.mode-icon { align-self: start; width: 54px; height: 54px; display: grid; place-items: center; color: white; border-radius: 16px 16px 16px 5px; font: 800 15px/1 var(--font-geist-mono), monospace; }
+.mode-icon img { width: 46px; height: 46px; object-fit: contain; /* the art carries its own drop shadow; this one seats it on the tile */ filter: drop-shadow(0 2px 3px rgba(24,18,8,.22)); }
 .mode-icon.blue { background: #3b82f6; } .mode-icon.violet { background: #7c3aed; } .mode-icon.cyan { background: #0891b2; } .mode-icon.pink { background: #db2777; }
 .mode-icon.green { background: #059669; }
+/* Colour-coded but muted, so a photographic vehicle reads against it instead of
+   fighting a saturated block. */
+.mode-icon:has(img) { background: color-mix(in srgb, currentColor 0%, #fff 0%); }
+.mode-icon.blue:has(img) { background: #e8f1fe; } .mode-icon.violet:has(img) { background: #f0eafe; }
+.mode-icon.cyan:has(img) { background: #e2f4f8; } .mode-icon.pink:has(img) { background: #fdeaf3; }
+.mode-icon.green:has(img) { background: #e4f4ee; }
 .network-panel { margin-top: 16px; padding: 18px; background: #fffdf8; border: 1px solid #ded6c7; border-radius: 22px; box-shadow: 0 18px 40px rgba(48,39,26,.08); }
 .network-title { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid #e8e0d4; }
 .network-title small { color: #7b7469; font: 700 8px/1.2 var(--font-geist-mono), monospace; letter-spacing: .7px; }

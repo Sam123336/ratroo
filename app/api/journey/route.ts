@@ -57,7 +57,12 @@ function normalizeBengaluru(payload: unknown, from: string, to: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { from?: string; to?: string; region?: string; routeId?: string };
+  let body: {
+    from?: string; to?: string; region?: string; routeId?: string;
+    // Where the rider is, when the typed name is a reverse-geocoded
+    // label rather than a place the graph knows.
+    fromLat?: number; fromLng?: number; toLat?: number; toLng?: number;
+  };
   try {
     body = await request.json();
   } catch {
@@ -99,7 +104,19 @@ export async function POST(request: Request) {
     const response = await fetch(`${ratrooApiUrl()}/journey`, {
       method: "POST",
       headers: { "Accept": "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to }),
+      // Coordinates ride along so the planner can fall back to the nearest
+      // stops when the name resolves to nothing. "Kasavanahalli, Bengaluru,
+      // Karnataka" is not a canonical place, and without a point the request
+      // 404s as "not found in the canonical graph database" — while BMTC
+      // stops stand a few hundred metres away.
+      body: JSON.stringify({
+        from,
+        to,
+        fromLat: body.fromLat,
+        fromLng: body.fromLng,
+        toLat: body.toLat,
+        toLng: body.toLng,
+      }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {

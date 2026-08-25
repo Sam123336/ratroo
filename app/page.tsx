@@ -601,6 +601,9 @@ export default function Home() {
       setMessage("Enter both your starting point and destination.");
       return;
     }
+    const fromIsCurrentLocation =
+      !!location?.address && from.trim() === location.address.trim();
+
     setStatus("loading");
     setJourney(null);
     setMessage("");
@@ -609,11 +612,26 @@ export default function Home() {
         method: "POST",
         credentials: "omit",
         headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        // Send whatever coordinates we already hold. The planner prefers a
+        // named place and only uses these when the name resolves to nothing —
+        // which is exactly the "use my current location" case, where the box
+        // holds a reverse-geocoded label like "Kasavanahalli, Bengaluru,
+        // Karnataka" that no canonical place matches. Without them the rider
+        // was told no route exists while stops stood a few hundred metres away.
         body: JSON.stringify({
           from: from.trim(),
           to: to.trim(),
           region,
           routeId: selectedTo?.type.endsWith("_DESTINATION") ? selectedTo.id : undefined,
+          // A picked suggestion is more precise than the device fix, so it wins.
+          // The device position is sent only when the box still holds the
+          // reverse-geocoded label we put there — matching on `location.address`
+          // rather than assuming. Someone who typed "Majestic" freehand means
+          // Majestic, not wherever they happen to be standing.
+          fromLat: selectedFrom?.latitude ?? (fromIsCurrentLocation ? location?.latitude : undefined),
+          fromLng: selectedFrom?.longitude ?? (fromIsCurrentLocation ? location?.longitude : undefined),
+          toLat: selectedTo?.latitude,
+          toLng: selectedTo?.longitude,
         }),
       });
       const payload = await response.json().catch(() => ({}));

@@ -402,11 +402,71 @@ export default function Home() {
       gsap.from("[data-hero-reveal]", { y: 26, opacity: 0, duration: 0.85, stagger: 0.1, ease: "power3.out" });
       gsap.from(".hero-visual", { x: 36, opacity: 0, duration: 1, delay: 0.25, ease: "power3.out" });
       gsap.to(".bus-orbit", { y: -9, rotation: 1, duration: 2.1, repeat: -1, yoyo: true, ease: "sine.inOut" });
+
+      // Sections reveal, and their children follow in sequence.
+      //
+      // Every section used to slide up as one block, which reads as a single
+      // moving rectangle rather than content arriving. Staggering the children
+      // by 45ms lets the eye follow the order the content is meant to be read
+      // in. Kept under ~50ms per item: slower than that and the last card in a
+      // row is still arriving after the reader has moved on.
       gsap.utils.toArray<HTMLElement>("[data-scroll-reveal]").forEach((element) => {
-        gsap.from(element, { scrollTrigger: { trigger: element, start: "top 84%" }, y: 28, opacity: 0, duration: 0.75, ease: "power2.out" });
+        const children = element.querySelectorAll<HTMLElement>(":scope > *");
+        const timeline = gsap.timeline({
+          scrollTrigger: { trigger: element, start: "top 84%" },
+        });
+        timeline.from(element, { y: 28, opacity: 0, duration: 0.75, ease: "power2.out" });
+        if (children.length > 1) {
+          timeline.from(
+            children,
+            { y: 18, opacity: 0, duration: 0.55, stagger: 0.045, ease: "power2.out" },
+            "-=0.45",
+          );
+        }
+      });
+
+      // Depth on the decorative layer only.
+      //
+      // Never on text or controls: parallaxed body copy is harder to read and
+      // is a documented motion-sickness trigger. The delta stays small so the
+      // hero art and the words beside it never visibly desync, and
+      // `will-change` is dropped once the scroll settles rather than pinning
+      // GPU memory for the life of the page.
+      const decor = pageRef.current?.querySelector<HTMLElement>(".hero-visual");
+      if (decor) {
+        gsap.to(decor, {
+          yPercent: -8,
+          ease: "none",
+          scrollTrigger: {
+            trigger: decor,
+            scrub: 0.6,
+            onToggle: (self) => {
+              decor.style.willChange = self.isActive ? "transform" : "";
+            },
+          },
+        });
+      }
+
+      // Progress along the page, for orientation on a long scroll.
+      gsap.to(".scroll-progress span", {
+        scaleX: 1,
+        ease: "none",
+        transformOrigin: "left center",
+        scrollTrigger: { trigger: document.body, start: "top top", end: "bottom bottom", scrub: 0.3 },
       });
     }, pageRef);
-    return () => context.revert();
+
+    // Fonts and the hero art land after the first measure, and every trigger
+    // start position was computed against the pre-load layout. Without this the
+    // reveals fire early — or never — on a slow connection.
+    const refresh = () => ScrollTrigger.refresh();
+    document.fonts?.ready.then(refresh).catch(() => undefined);
+    window.addEventListener("load", refresh);
+
+    return () => {
+      window.removeEventListener("load", refresh);
+      context.revert();
+    };
   }, [splashDone]);
 
   useEffect(() => {
@@ -725,6 +785,10 @@ export default function Home() {
 
   return (
     <main ref={pageRef}>
+      {/* Reading position on a long page. aria-hidden because it duplicates
+          nothing a screen reader needs — scroll position is already conveyed by
+          the reading order itself. */}
+      <div className="scroll-progress" aria-hidden="true"><span /></div>
       {!splashDone && <SplashScreen onFinish={() => setSplashDone(true)} />}
       <header className="nav-shell">
         <a className="brand" href="#top" aria-label="Ratroo home"><span className="brand-mark">R</span><span>ratroo</span></a>

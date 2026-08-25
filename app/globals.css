@@ -273,3 +273,39 @@ footer > span { color: #69716b; text-align: right; font: 600 10px/1 var(--font-g
 /* How many buses are actually moving. Stated plainly so an empty map reads as
    "none running" — true after about 22:00 — rather than "the map is broken". */
 .live-count { margin: 4px 0 0; color: #7a8a80; font: 650 11px/1 var(--font-geist-mono), monospace; letter-spacing: .3px; }
+
+/* ── Focus, and reading position ──────────────────────────────────────────
+   Added after a UX pass: the page had no visible focus ring at all, so a
+   keyboard rider could not tell where they were. That is the single most
+   serious accessibility gap a site can ship, and it outranks every stylistic
+   change on this page. */
+
+/* :focus-visible, not :focus — a mouse user clicking a button should not get a
+   ring, but a keyboard user tabbing to it must.
+
+   :is(), not :where(). `:where()` contributes zero specificity, so this lost to
+   ordinary rules like `.planner-row input { outline: 0 }` and the ring silently
+   never painted on the planner fields — the very controls a keyboard rider
+   reaches first. :is() keeps the specificity of its most specific argument. */
+:is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--saffron-deep, #b65000);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Windows High Contrast mode discards custom colours; a transparent outline is
+   repainted by the OS, so the ring survives. */
+@media (forced-colors: active) {
+  :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid transparent;
+  }
+}
+
+.scroll-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000; pointer-events: none; }
+.scroll-progress span { display: block; height: 100%; background: linear-gradient(90deg, var(--saffron, #e7770f), var(--leaf, #1f5b45)); transform: scaleX(0); transform-origin: left center; }
+
+/* The bar is progress, not decoration: with motion reduced it would otherwise
+   sit permanently at zero, reading as a broken element. */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-progress { display: none; }
+}

@@ -103,3 +103,14 @@
 @media (min-width: 601px) and (max-width: 900px) {
   .vehicle-choices { grid-template-columns: repeat(3, 1fr); }
 }
+
+.service-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
+.service-days label { cursor: pointer; }
+.service-days input { position: absolute; opacity: 0; width: 1px; }
+.service-days span { display: grid; place-items: center; min-height: 42px; border: 1px solid var(--r-line); border-radius: 11px; background: #fff; color: #66736b; }
+.service-days input:checked + span { background: var(--r-ink); border-color: var(--r-ink); color: #fff; }
+.service-days input:focus-visible + span { outline: 2px solid var(--r-orange); outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  .service-days { grid-template-columns: repeat(4, 1fr); }
+}

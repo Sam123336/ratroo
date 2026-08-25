@@ -289,6 +289,12 @@ function SuggestionInput({
     }
   }
 
+  // Whether the panel is actually on screen. `open` alone is not that: with no
+  // results and no search running there is nothing to draw, and announcing an
+  // expanded listbox that renders nothing misleads a screen reader exactly as
+  // the empty "no matching" panel misled a sighted rider.
+  const panelOpen = open && (loading || suggestions.length > 0);
+
   return (
     <div className="autocomplete">
       <label>
@@ -301,15 +307,29 @@ function SuggestionInput({
           placeholder={placeholder}
           aria-label={field === "FROM" ? "Starting point" : "Destination"}
           aria-autocomplete="list"
-          aria-expanded={open}
+          aria-expanded={panelOpen}
           aria-controls={`${field.toLowerCase()}-suggestions`}
           autoComplete="off"
         />
       </label>
-      {open && (
+      {/*
+        Nothing to offer means nothing to show.
+
+        This used to render "No matching stops, stations, or routes." over an
+        empty list, which read as a refusal — and it fired hardest on the one
+        input that is always correct: the reverse-geocoded label the app writes
+        into FROM when a rider taps "use my current location". No stop is named
+        "Kasavanahalli, Bengaluru, Karnataka", so the panel appeared while the
+        journey below it planned perfectly well. The planner falls back to the
+        rider's coordinates and the nearest stops, so an unmatched name is not
+        a failure and should not be dressed as one.
+
+        The panel still opens while a search is running, so typing never feels
+        dead; it just closes rather than announcing a dead end.
+      */}
+      {panelOpen && (
         <div className="suggestions" id={`${field.toLowerCase()}-suggestions`} role="listbox">
           {loading && <div className="suggestion-status"><span className="mini-spinner" /> Searching {region === "all" ? "Kolkata and Bengaluru" : region === "kolkata" ? "Kolkata" : "Bengaluru"}…</div>}
-          {!loading && suggestions.length === 0 && <div className="suggestion-status">No matching stops, stations, or routes.</div>}
           {!loading && !value.trim() && suggestions.length > 0 && <div className="suggestion-heading">Direct destinations from your selected stop</div>}
           {!loading && suggestions.map((suggestion, index) => (
             <button

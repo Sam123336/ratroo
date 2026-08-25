@@ -3,7 +3,7 @@
 import { FormEvent, KeyboardEvent, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import type { MappedRoute, NearbyStop } from "./components/TransitMap";
+import type { LiveVehicle, MappedRoute, NearbyStop } from "./components/TransitMap";
 import PublicAssistant from "./components/PublicAssistant";
 
 const TransitMap = lazy(() => import("./components/TransitMap"));
@@ -387,6 +387,7 @@ export default function Home() {
   const [networkMessage, setNetworkMessage] = useState("");
   const [networkLoading, setNetworkLoading] = useState(false);
   const [nearby, setNearby] = useState<NearbyStop[]>([]);
+  const [liveVehicles, setLiveVehicles] = useState<LiveVehicle[]>([]);
   const [nearbyRadius, setNearbyRadius] = useState(0);
   const [mappedRoute, setMappedRoute] = useState<MappedRoute | null>(null);
   const [routeMapLoading, setRouteMapLoading] = useState(false);
@@ -435,6 +436,39 @@ export default function Home() {
     // Location is intentionally requested once; the retry button calls it again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [splashDone]);
+
+  // Buses that are moving, polled while the page is open.
+  //
+  // Twenty seconds because that is the backend's own shared cache window —
+  // polling faster costs an upstream request and returns the same answer. The
+  // poll stops when the tab is hidden: nobody is watching a map they cannot
+  // see, and BMTC is an unpaid operator.
+  useEffect(() => {
+    if (!location?.latitude || !location?.longitude || location.region === "unsupported") {
+      setLiveVehicles([]);
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({
+      lat: String(location.latitude),
+      lng: String(location.longitude),
+      radius: "2500",
+    });
+    const poll = async () => {
+      if (document.hidden) return;
+      try {
+        const response = await fetch(`/api/live-vehicles?${params}`);
+        const payload = await response.json();
+        if (!cancelled) setLiveVehicles(Array.isArray(payload?.data) ? payload.data : []);
+      } catch {
+        // A failed poll leaves the last known buses on screen rather than
+        // clearing the map, which would read as "they all stopped".
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 20_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [location]);
 
   useEffect(() => {
     if (!location?.latitude || !location?.longitude || location.region === "unsupported") {
@@ -782,9 +816,9 @@ export default function Home() {
       <section className="mode-section" id="coverage" data-scroll-reveal>
         <div className="section-copy"><p className="eyebrow"><span /> Live around you</p><h2>{location && location.region !== "unsupported" ? <>{location.name}<br /><em>on the map.</em></> : <>Your position.<br /><em>Your network.</em></>}</h2><p>{location && location.region !== "unsupported" ? `Ratroo found ${nearby.length} nearby stops using the same expanding-radius service as the mobile app.` : "Allow location access once. Ratroo uses the backend coverage polygon—not a manual city switch—to identify the right network."}</p></div>
         {location && location.region !== "unsupported" && location.latitude && location.longitude ? <div className="coverage-live">
-          <Suspense fallback={<div className="transit-map-shell"><div className="map-loading"><span className="mini-spinner" /> Loading the OpenStreetMap view…</div></div>}><TransitMap latitude={location.latitude} longitude={location.longitude} address={location.address} nearby={nearby} route={mappedRoute} /></Suspense>
+          <Suspense fallback={<div className="transit-map-shell"><div className="map-loading"><span className="mini-spinner" /> Loading the OpenStreetMap view…</div></div>}><TransitMap latitude={location.latitude} longitude={location.longitude} address={location.address} nearby={nearby} route={mappedRoute} liveVehicles={liveVehicles} /></Suspense>
           <div className="nearby-board">
-            <div className="nearby-board-title"><div><small>NEARBY NOW</small><h3>{mappedRoute ? mappedRoute.name : `${nearby.length} stops within ${nearbyRadius < 1000 ? `${nearbyRadius} m` : `${Math.round(nearbyRadius / 1000)} km`}`}</h3></div>{routeMapLoading && <span className="mini-spinner" />}</div>
+            <div className="nearby-board-title"><div><small>NEARBY NOW</small><h3>{mappedRoute ? mappedRoute.name : `${nearby.length} stops within ${nearbyRadius < 1000 ? `${nearbyRadius} m` : `${Math.round(nearbyRadius / 1000)} km`}`}</h3>{!mappedRoute && <p className="live-count">{liveVehicles.length ? `${liveVehicles.length} bus${liveVehicles.length === 1 ? "" : "es"} moving now` : "No buses reporting right now"}</p>}</div>{routeMapLoading && <span className="mini-spinner" />}</div>
             <div className="nearby-stops">{nearby.slice(0, 7).map((stop) => <article key={stop.id}><div><strong>{stop.name}</strong><small>{stop.provider} · {stop.distanceMeters < 1000 ? `${stop.distanceMeters} m` : `${(stop.distanceMeters / 1000).toFixed(1)} km`} away</small></div><div className="route-badges">{stop.routes.slice(0, 3).map((route) => <button type="button" key={route.id} onClick={() => loadRoute(route.id)}>{route.name}</button>)}</div></article>)}</div>
           </div>
           <div className="mode-grid">{modesByRegion[location.region].map((mode) => <button type="button" key={mode.name} className={`mode-card ${activeMode === mode.name ? "selected" : ""}`} aria-pressed={activeMode === mode.name} onClick={() => loadNetwork(mode.name)}><span className={`mode-icon ${mode.color}`}>{MODE_ART[mode.name]

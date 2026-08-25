@@ -88,7 +88,7 @@ async function addBuildingLayer(map: MapLibreMap, visible: boolean) {
   }, "ratroo-user-halo");
 }
 
-export default function OpenTransitMap({ latitude, longitude, address, nearby, route }: TransitMapProps) {
+export default function OpenTransitMap({ latitude, longitude, address, nearby, route, liveVehicles = [] }: TransitMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -149,6 +149,36 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
       map.addLayer({ id: "ratroo-route", type: "line", source: "ratroo-route", filter: ["==", ["geometry-type"], "LineString"], paint: { "line-color": "#f36d00", "line-width": 5, "line-opacity": 0.95 } });
       map.addLayer({ id: "ratroo-route-stops", type: "circle", source: "ratroo-route", filter: ["==", ["geometry-type"], "Point"], paint: { "circle-radius": 5, "circle-color": "#f36d00", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
 
+      // Buses reported by the operator in the last few minutes.
+      //
+      // Drawn above every other transit layer on purpose: a moving vehicle is
+      // the one thing on this map that changes while the rider watches, and it
+      // is what they came to see. Stops are context.
+      if (!map.getSource("ratroo-live")) map.addSource("ratroo-live", { type: "geojson", data: emptyCollection });
+      if (!map.hasImage("ratroo-bus")) {
+        // The same artwork the mode tiles use, so a bus on the map and a bus in
+        // the list are recognisably the same thing.
+        map.loadImage("/modes/mode_bus.png").then((image) => {
+          if (image && !map.hasImage("ratroo-bus")) map.addImage("ratroo-bus", image.data);
+        }).catch((error) => console.warn("[ratroo] bus icon unavailable:", error));
+      }
+      map.addLayer({
+        id: "ratroo-live-halo", type: "circle", source: "ratroo-live",
+        paint: { "circle-radius": 16, "circle-color": "#f36d00", "circle-opacity": 0.16 },
+      });
+      map.addLayer({
+        id: "ratroo-live", type: "symbol", source: "ratroo-live",
+        layout: {
+          "icon-image": "ratroo-bus",
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.08, 16, 0.2],
+          // Point it the way it is going. `icon-rotate` is compass degrees,
+          // which is what the operator reports.
+          "icon-rotate": ["coalesce", ["get", "heading"], 0],
+          "icon-rotation-alignment": "map",
+          "icon-allow-overlap": true,
+        },
+      });
+
       // Not awaited: buildings are decoration, and the map is usable without
       // them. A slow or unreachable style must not hold up the transit layers.
       // Failures are logged rather than swallowed — a silent catch here is what
@@ -180,6 +210,22 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
       wrapper.append(title, detail);
       new maplibregl.Popup({ offset: 12 }).setLngLat(feature.geometry.coordinates as [number, number]).setDOMContent(wrapper).addTo(map);
     });
+    map.on("click", "ratroo-live", (event) => {
+      const feature = event.features?.[0];
+      if (!feature || feature.geometry.type !== "Point") return;
+      const wrapper = document.createElement("div");
+      wrapper.className = "map-popup";
+      const title = document.createElement("strong");
+      title.textContent = String(feature.properties?.name || "BMTC bus");
+      const detail = document.createElement("span");
+      // The age is part of the answer, not a footnote: a rider deciding whether
+      // to run for it needs to know the pin is 20 seconds old, not two minutes.
+      detail.textContent = String(feature.properties?.detail || "Reported by BMTC");
+      wrapper.append(title, detail);
+      new maplibregl.Popup({ offset: 12 }).setLngLat(feature.geometry.coordinates as [number, number]).setDOMContent(wrapper).addTo(map);
+    });
+    map.on("mouseenter", "ratroo-live", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", "ratroo-live", () => { map.getCanvas().style.cursor = ""; });
     map.on("mouseenter", "ratroo-nearby", () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", "ratroo-nearby", () => { map.getCanvas().style.cursor = ""; });
     mapRef.current = map;
@@ -202,6 +248,37 @@ export default function OpenTransitMap({ latitude, longitude, address, nearby, r
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, latitude, longitude, address, nearbyKey]);
+
+  // Buses, on their own effect and their own key.
+  //
+  // Separate from the stops above because this redraws every poll while the
+  // rest does not: pushing them together would rebuild the stop and route
+  // layers every twenty seconds for no reason.
+  const liveKey = liveVehicles
+    .map((bus) => `${bus.vehicleNumber}:${bus.latitude},${bus.longitude},${bus.heading}`)
+    .join("|");
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    (map.getSource("ratroo-live") as GeoJSONSource)?.setData({
+      type: "FeatureCollection",
+      features: liveVehicles.map((bus) => ({
+        type: "Feature" as const,
+        properties: {
+          heading: bus.heading ?? 0,
+          name: bus.routeName ?? "BMTC bus",
+          detail: [
+            bus.vehicleNumber,
+            bus.serviceType,
+            bus.fixAgeSeconds !== null ? `seen ${bus.fixAgeSeconds}s ago` : null,
+          ].filter(Boolean).join(" · "),
+        },
+        geometry: { type: "Point" as const, coordinates: [bus.longitude, bus.latitude] },
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, liveKey]);
 
   useEffect(() => {
     const map = mapRef.current;

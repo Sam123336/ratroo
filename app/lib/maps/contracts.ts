@@ -29,12 +29,27 @@ export type MappedRoute = {
   stops: Array<{ name: string; latitude: number; longitude: number; sequence: number }>;
 };
 
+/** A bus the operator is reporting right now. */
+export type LiveVehicle = {
+  vehicleNumber: string | null;
+  serviceType: string | null;
+  routeName: string | null;
+  latitude: number;
+  longitude: number;
+  /** Compass degrees, used to point the icon the way it is travelling. */
+  heading: number | null;
+  /** Seconds since the operator last heard from it. */
+  fixAgeSeconds: number | null;
+};
+
 export type TransitMapProps = {
   latitude: number;
   longitude: number;
   address: string;
   nearby: NearbyStop[];
   route: MappedRoute | null;
+  /** Buses moving right now. Empty when nothing is running, which is common at night. */
+  liveVehicles?: LiveVehicle[];
 };
 
 /** Application pages consume only this contract; vendor code lives in adapters. */

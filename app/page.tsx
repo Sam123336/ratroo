@@ -191,7 +191,23 @@ function SplashScreen({ onFinish }: { onFinish: () => void }) {
           <span className="splash-stop splash-stop-one" />
           <span className="splash-stop splash-stop-two" />
           <span className="splash-stop splash-stop-three" />
-          <span className="splash-ride">RIDE <b>→</b></span>
+          {/*
+            An auto running the line, rather than a pill reading "RIDE →".
+
+            The emoji rather than `auto.png`: the brand art is a rendered 3D
+            model with its own lighting and perspective, which reads as a
+            sticker dropped onto a flat 3px line. The emoji is drawn in the
+            same register as the rest of this screen — flat shapes, no
+            shading — so it sits on the track instead of hovering over it.
+
+            Two elements on purpose: GSAP animates `.splash-ride` along the
+            track (xPercent -220 → 135) and the inner span carries its own bob.
+            Both write `transform`, so putting them on one element would let
+            the CSS keyframe stamp on the timeline mid-flight.
+          */}
+          <span className="splash-ride">
+            <span role="img" aria-label="Auto rickshaw">🛺</span>
+          </span>
         </div>
         <div className="splash-cities splash-reveal"><span className="splash-city">Kolkata</span><i>connecting</i><span className="splash-city">Bengaluru</span></div>
         <p className="splash-tagline splash-reveal">Know the way. <em>Enjoy the ride.</em></p>

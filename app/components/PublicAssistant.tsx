@@ -10,6 +10,7 @@ type ChatMessage = {
 };
 
 type Props = {
+  region?: string;
   latitude?: number;
   longitude?: number;
   locationLabel?: string;
@@ -25,11 +26,70 @@ type Props = {
 // Bumped after removing historically saved West-Bengal-only replies for
 // Bengaluru questions. Old answers must not survive a corrected deployment.
 const STORAGE_KEY = "ratroo.public-assistant.v2";
-const SUGGESTIONS = [
-  "How do I get to Digha from here?",
-  "ekhan theke Bongaon kivabe jabo?",
-  "How do I get from Sealdah to Bongaon?",
+/**
+ * Opening prompts, per region.
+ *
+ * These were three West Bengal questions — Digha, Bongaon, Sealdah — shown to
+ * everyone, so a rider standing in Bengaluru was invited to ask about a beach
+ * 1,700 km away, one of them in Bengali. The panel already receives the
+ * rider's position and their nearby stops; it just never used them.
+ *
+ * The Bengali prompt stays for Kolkata, where it is the language riders
+ * actually use, and is not shown in Karnataka where it is noise.
+ */
+const REGION_SUGGESTIONS: Record<string, string[]> = {
+  kolkata: [
+    "How do I get to Digha from here?",
+    "ekhan theke Bongaon kivabe jabo?",
+    "How do I get from Sealdah to Bongaon?",
+  ],
+  bengaluru: [
+    "How do I get to Majestic from here?",
+    "How do I get from Indiranagar to Electronic City?",
+    "Which bus goes to Kempegowda Airport?",
+  ],
+};
+
+/** What to say about languages, which is not the same everywhere. */
+const REGION_LANGUAGES: Record<string, string> = {
+  kolkata: "Ask in English or Bengali.",
+  bengaluru: "Ask in English or Kannada.",
+};
+
+/**
+ * Prompts worth showing this rider.
+ *
+ * Real nearby stops come first: they are true by construction, need no list to
+ * be maintained, and work in a region nobody has written prompts for yet —
+ * which matters as coverage grows beyond these two cities. The curated set
+ * fills in behind them.
+ */
+/**
+ * Prompts that name no place, for a rider whose region is not known yet —
+ * before location is granted, or anywhere coverage has not reached.
+ *
+ * An empty panel is worse than a generic one: the buttons are what tell a
+ * first-time rider the box takes plain questions at all.
+ */
+const GENERIC_SUGGESTIONS = [
+  "How do I get to the nearest bus stand?",
+  "Which buses run near me right now?",
+  "What is the last bus home tonight?",
 ];
+
+function suggestionsFor(region: string | undefined, stops: NonNullable<Props["nearbyStops"]>) {
+  const curated = REGION_SUGGESTIONS[region ?? ""] ?? [];
+  // The busiest stop near a rider is usually the interchange they would name.
+  // Long names are skipped rather than truncated: "St Josephs Indian School/
+  // Malya Hospital" makes a button nobody reads, and a half-name in a question
+  // the assistant then has to resolve is worse than not offering it.
+  const anchor = [...stops]
+    .filter(stop => stop.name.length <= 28)
+    .sort((a, b) => (b.routes?.length ?? 0) - (a.routes?.length ?? 0))[0];
+  const fromStops = anchor ? [`How do I get to ${anchor.name} from here?`] : [];
+  const picked = [...fromStops, ...curated];
+  return (picked.length ? picked : GENERIC_SUGGESTIONS).slice(0, 3);
+}
 
 function stopsForAssistant(stops: NonNullable<Props["nearbyStops"]>) {
   const buses = stops.filter((stop) => stop.category.startsWith("BUS")).slice(0, 5);
@@ -54,7 +114,7 @@ function linkedLine(line: string, lineIndex: number, lines: string[]) {
     : part)}{lineIndex < lines.length - 1 && <br />}</span>;
 }
 
-export default function PublicAssistant({ latitude, longitude, locationLabel, nearbyStops = [] }: Props) {
+export default function PublicAssistant({ latitude, longitude, locationLabel, nearbyStops = [], region }: Props) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -146,7 +206,7 @@ export default function PublicAssistant({ latitude, longitude, locationLabel, ne
       </header>
       <div className="assistant-context"><span className={latitude != null ? "live" : ""}>●</span>{latitude != null ? `Planning from ${locationLabel || "your current location"}${nearbyStops.length ? ` · ${nearbyStops.length} nearby stops ready` : ""}` : "Add your starting place in the question"}</div>
       <div className="assistant-messages" ref={scrollRef} aria-live="polite">
-        {!messages.length && <section className="assistant-intro"><div className="assistant-orbit">AI<span /></div><h2>Where do you want to go?</h2><p>Ask in English or Bengali. Ratroo checks real routes and timetables instead of guessing.</p><div>{SUGGESTIONS.map(suggestion => <button type="button" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}<span>→</span></button>)}</div></section>}
+        {!messages.length && <section className="assistant-intro"><div className="assistant-orbit">AI<span /></div><h2>Where do you want to go?</h2><p>{REGION_LANGUAGES[region ?? ""] ?? "Ask in English."} Ratroo checks real routes and timetables instead of guessing.</p><div>{suggestionsFor(region, nearbyStops).map(suggestion => <button type="button" key={suggestion} onClick={() => void send(suggestion)}>{suggestion}<span>→</span></button>)}</div></section>}
         {messages.map(message => <article className={`assistant-message ${message.role}`} key={message.id}>
           <div>{message.text.split("\n").map(linkedLine)}</div>
           {message.role === "assistant" && Boolean(message.toolCalls?.length) && <small><span>✓</span>{message.toolCalls?.includes("nearby_stops") ? " From live nearby data" : " From live route data"}</small>}

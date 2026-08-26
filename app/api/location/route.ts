@@ -1,7 +1,7 @@
 import { ratrooApiUrl } from "@/lib/ratroo-api";
 import { resolveReverseGeocoder } from "@/app/lib/maps/server/reverse-geocoder";
 
-type SupportedRegion = "kolkata" | "bengaluru" | "unsupported";
+type SupportedRegion = "kolkata" | "bengaluru" | "india" | "unsupported";
 
 function deepestData(value: unknown): unknown {
   let current = value;
@@ -15,6 +15,7 @@ function deepestData(value: unknown): unknown {
 function regionFromState(stateCode: string | null): SupportedRegion {
   if (stateCode === "WB") return "kolkata";
   if (stateCode === "KA") return "bengaluru";
+  if (stateCode) return "india";
   return "unsupported";
 }
 
@@ -71,6 +72,6 @@ export async function GET(request: Request) {
     modes: Array.from(new Set([...coverageModes.map((mode) => mode.toUpperCase()), ...expectedModes])),
     routeCount,
     stopCount,
-    coverageMethod: "backend-polygon",
+    coverageMethod: coverageName ? "backend-polygon" : "state-boundary",
   }, { headers: { "Cache-Control": "public, max-age=300, s-maxage=3600" } });
 }

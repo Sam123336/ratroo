@@ -44,6 +44,14 @@ type Journey = {
   fareIncomplete?: boolean;
   confidenceScore: number;
   confidenceBadges: string[];
+  alternatives?: Array<{
+    legs: JourneyLeg[];
+    totalDistanceKm: string;
+    totalDurationMinutes: number;
+    transfersCount: number;
+    totalFare?: number | null;
+    fareIncomplete?: boolean;
+  }>;
 };
 
 /**
@@ -66,7 +74,7 @@ const SELECTABLE_CITIES = [
   { region: "bengaluru", label: "Bengaluru", latitude: 12.9716, longitude: 77.5946 },
 ] as const;
 
-type SupportedRegion = "kolkata" | "bengaluru";
+type SupportedRegion = "kolkata" | "bengaluru" | "india";
 type LocationState = {
   region: SupportedRegion | "unsupported";
   name: string;
@@ -118,6 +126,33 @@ const LEG_ART: Record<string, string> = {
   AUTO: "/modes/auto.png",
   // WALK has no vehicle, so it keeps a glyph.
 };
+
+function modeName(leg: JourneyLeg) {
+  if (leg.mode === "WALK") return "Walk";
+  if (leg.mode === "AUTO" && !leg.routeId) return "Auto, bike taxi, or cab";
+  const names: Record<string, string> = {
+    BUS: "Bus", METRO: "Metro", RAIL: "Train", SUBURBAN_RAIL: "Local train",
+    FERRY: "Ferry", TRAM: "Tram", AUTO: "Auto", SHARED_AUTO: "Shared taxi / auto",
+  };
+  return names[leg.mode] || leg.mode.replaceAll("_", " ").toLowerCase();
+}
+
+function legAction(leg: JourneyLeg, index: number, total: number) {
+  if (leg.options?.length) {
+    const choice = leg.options.find(option => option.recommended) || leg.options[0];
+    return index === total - 1
+      ? `${choice.label} to your destination`
+      : `${choice.label} to ${leg.toName}`;
+  }
+  if (leg.mode === "WALK") return `Walk to ${leg.toName}`;
+  return `Take ${leg.serviceName || modeName(leg)} toward ${leg.toName}`;
+}
+
+function confidenceCopy(score: number) {
+  if (score >= 0.85) return ["Good match", "Route and stops are well matched"];
+  if (score >= 0.65) return ["Fair match", "Check the stop name before leaving"];
+  return ["Limited data", "Some route details still need verification"];
+}
 
 const MODE_ART: Record<string, string> = {
   Bus: "/modes/mode_bus.png",
@@ -571,12 +606,7 @@ export default function Home() {
     setJourney(null);
     setLocationStatus("idle");
 
-    if (data.region === "unsupported") {
-      setStatus("error");
-      setMessage("Ratroo currently plans journeys in Kolkata and Bengaluru.");
-    } else {
-      setStatus("idle");
-    }
+    setStatus("idle");
   }
 
   async function chooseCity(city: (typeof SELECTABLE_CITIES)[number]) {
@@ -612,12 +642,7 @@ export default function Home() {
         setMappedRoute(null);
         setJourney(null);
         setLocationStatus("idle");
-        if (data.region === "unsupported") {
-          setStatus("error");
-          setMessage("Ratroo currently plans journeys in Kolkata and Bengaluru. Choose either city to explore its network.");
-        } else {
-          setStatus("idle");
-        }
+        setStatus("idle");
       } catch (error) {
         setLocationStatus("error");
         setMessage(error instanceof Error ? error.message : "We could not resolve this location.");
@@ -625,8 +650,8 @@ export default function Home() {
     }, (error) => {
       setLocationStatus("error");
       setMessage(error.code === error.PERMISSION_DENIED
-        ? "Location permission was not allowed. Choose Kolkata or Bengaluru instead."
-        : "Your location is unavailable right now. Choose your city instead.");
+        ? "Location permission was not allowed. Search and select your starting place instead."
+        : "Your location is unavailable right now. Search your starting place instead.");
     }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
   }
 
@@ -653,15 +678,15 @@ export default function Home() {
     setJourney(null);
     setStatus("idle");
     setMessage("");
-    if (!suggestion.region || suggestion.latitude == null || suggestion.longitude == null) return;
+    if (suggestion.latitude == null || suggestion.longitude == null) return;
 
     const fallback: LocationState = {
-      region: suggestion.region,
-      name: suggestion.region === "bengaluru" ? "Bengaluru" : "West Bengal",
+      region: suggestion.region || "india",
+      name: suggestion.region === "bengaluru" ? "Bengaluru" : suggestion.region === "kolkata" ? "West Bengal" : "India",
       address: suggestion.name,
       latitude: suggestion.latitude,
       longitude: suggestion.longitude,
-      modes: suggestion.region === "bengaluru" ? ["BUS", "METRO"] : ["BUS", "METRO", "FERRY", "TRAM", "RAIL"],
+      modes: suggestion.region === "bengaluru" ? ["BUS", "METRO"] : suggestion.region === "kolkata" ? ["BUS", "METRO", "FERRY", "TRAM", "RAIL"] : [],
       source: "origin",
     };
     setLocation(fallback);
@@ -720,12 +745,7 @@ export default function Home() {
 
   async function planJourney(event: FormEvent) {
     event.preventDefault();
-    const region = location && location.region !== "unsupported" ? location.region : selectedFrom?.region;
-    if (!region) {
-      setStatus("error");
-      setMessage("Select your starting point from the suggestions so Ratroo can detect the correct network.");
-      return;
-    }
+    const region = location && location.region !== "unsupported" ? location.region : selectedFrom?.region || "india";
     if (!from.trim() || !to.trim()) {
       setStatus("error");
       setMessage("Enter both your starting point and destination.");
@@ -800,7 +820,7 @@ export default function Home() {
         <div className="hero-copy">
           <p className="eyebrow" data-hero-reveal><span /> Public transport, made human</p>
           <h1 data-hero-reveal>Know the way.<br /><em>Enjoy the ride.</em></h1>
-          <p className="lede" data-hero-reveal>Plan dependable journeys in Kolkata and Bengaluru with clear routes, honest confidence scores, and no account required.</p>
+          <p className="lede" data-hero-reveal>Plan clear public journeys across India using verified buses, metro, rail, ferry, auto and shared-taxi routes—no account required.</p>
           <div className="location-panel" data-hero-reveal>
             <button className="locate-button" type="button" onClick={useMyLocation} disabled={locationStatus === "loading"}>
               <span className="location-pulse" /> {locationStatus === "loading" ? "Finding your location…" : "Use my current location"}
@@ -861,15 +881,17 @@ export default function Home() {
 
       {journey && (
         <section className="journey-result" ref={resultRef} aria-live="polite">
-          <div className="result-heading"><div><p className="eyebrow"><span /> Recommended journey</p><h2>{journey.fromInput} <b>→</b> {journey.toInput}</h2></div><div className="confidence"><strong>{Math.round(journey.confidenceScore * 100)}%</strong><span>route confidence</span></div></div>
+          <div className="result-heading"><div><p className="eyebrow"><span /> Best route for you</p><h2>{journey.fromInput} <b>→</b> {journey.toInput}</h2><p className="result-subtitle">Follow these steps in order. Ratroo never hides a walk or change of vehicle.</p></div><div className="confidence"><strong>✓ {confidenceCopy(journey.confidenceScore)[0]}</strong><span>{confidenceCopy(journey.confidenceScore)[1]}</span></div></div>
           <div className="journey-summary">
-            {journey.totalDurationMinutes > 0 && <div><strong>{journey.totalDurationMinutes}</strong><span>minutes</span></div>}
-            {journey.totalDistanceKm && journey.totalDistanceKm !== "—" && <div><strong>{journey.totalDistanceKm}</strong><span>distance</span></div>}
-            {Number.isFinite(journey.transfersCount) && <div><strong>{journey.transfersCount}</strong><span>{journey.transfersCount === 1 ? "transfer" : "transfers"}</span></div>}
-            {journey.totalFare != null && Number.isFinite(journey.totalFare) && <div><strong>₹{journey.totalFare}{journey.fareIncomplete ? "+" : ""}</strong><span>estimated fare</span></div>}
+            {journey.totalDurationMinutes > 0 && <div><small>About</small><strong>{journey.totalDurationMinutes} min</strong><span>total travel time</span></div>}
+            {Number.isFinite(journey.transfersCount) && <div><small>Changes</small><strong>{journey.transfersCount === 0 ? "Direct" : journey.transfersCount}</strong><span>{journey.transfersCount === 0 ? "no vehicle change" : journey.transfersCount === 1 ? "change once" : "vehicle changes"}</span></div>}
+            {journey.totalFare != null && Number.isFinite(journey.totalFare) ? <div><small>Fare</small><strong>₹{journey.totalFare}{journey.fareIncomplete ? "+" : ""}</strong><span>{journey.fareIncomplete ? "some fares not published" : "published / calculated total"}</span></div> : <div><small>Fare</small><strong>Not published</strong><span>pay the operator’s current fare</span></div>}
+            {journey.totalDistanceKm && journey.totalDistanceKm !== "—" && <div><small>Distance</small><strong>{journey.totalDistanceKm}</strong><span>including first and last mile</span></div>}
           </div>
-          <ol className="legs">{journey.legs.map((leg) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{LEG_ART[leg.mode] ? <img src={LEG_ART[leg.mode]} alt="" width={30} height={30} loading="lazy" decoding="async" /> : leg.mode === "WALK" ? "\u2b21" : leg.mode.charAt(0)}</span><div><small>{leg.departureTime || `${leg.durationMinutes} min`} · {leg.mode === "AUTO" ? "auto / bike taxi" : leg.mode.replace("_", " ").toLowerCase()}</small><strong>{leg.serviceName || leg.instructions}</strong><p>{leg.fromName} <b>→</b> {leg.toName}</p>{leg.options && leg.options.length > 1 && <div className="leg-options">{leg.options.map((option) => <span key={option.mode} className={option.recommended ? "picked" : ""}>{LEG_ART[option.mode] && <img src={LEG_ART[option.mode]} alt="" width={18} height={18} loading="lazy" />}{option.label} · {option.durationMinutes} min{option.isEstimate ? "*" : ""}</span>)}<em>* estimated from distance — Ratroo has no fare or arrival feed for hailed rides</em></div>}</div></li>)}</ol>
-          <p className="data-note">{journey.confidenceBadges?.join(" · ") || "Ratroo canonical transit data"}</p>
+          <div className="steps-heading"><h3>Your journey, step by step</h3><span>{journey.legs.length} {journey.legs.length === 1 ? "step" : "steps"}</span></div>
+          <ol className="legs">{journey.legs.map((leg, index) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{LEG_ART[leg.mode] ? <img src={LEG_ART[leg.mode]} alt="" width={30} height={30} loading="lazy" decoding="async" /> : leg.mode === "WALK" ? "●" : leg.mode.charAt(0)}</span><div className="leg-copy"><div className="leg-topline"><small>Step {index + 1} · {modeName(leg)}</small><b>{leg.departureTime ? `Leave ${leg.departureTime}` : `${leg.durationMinutes} min`}</b></div><strong>{legAction(leg, index, journey.legs.length)}</strong><p><span>{leg.fromName}</span><i>→</i><span>{leg.toName}</span></p>{leg.arrivalTime && <em>Expected at this stop: {leg.arrivalTime}</em>}{leg.options && leg.options.length > 1 && <div className="leg-options">{leg.options.map((option) => <span key={option.mode} className={option.recommended ? "picked" : ""}>{option.recommended && <b>Best · </b>}{LEG_ART[option.mode] && <img src={LEG_ART[option.mode]} alt="" width={18} height={18} loading="lazy" />}{option.label} · {option.durationMinutes} min</span>)}<em>First/last-mile times are estimates from distance; no fare is invented.</em></div>}</div></li>)}</ol>
+          {!!journey.alternatives?.length && <div className="alternatives"><div><h3>Other ways to go</h3><p>Choose less time or fewer changes—whatever works for you.</p></div><div className="alternative-list">{journey.alternatives.map((option, index) => <article key={`${option.totalDurationMinutes}-${index}`}><span>Option {index + 2}</span><strong>{option.totalDurationMinutes} min</strong><p>{option.transfersCount === 0 ? "Direct" : `${option.transfersCount} ${option.transfersCount === 1 ? "change" : "changes"}`} · {option.totalFare != null ? `₹${option.totalFare}${option.fareIncomplete ? "+" : ""}` : "fare not published"}</p><small>{option.legs.filter(leg => leg.routeId).map(leg => leg.serviceName || modeName(leg)).join(" → ")}</small></article>)}</div></div>}
+          <details className="data-note"><summary>Why Ratroo recommends this</summary><p>{journey.confidenceBadges?.join(" · ") || "Matched from Ratroo transit data"}. Times and fares are shown only when published or clearly labelled as estimates.</p></details>
         </section>
       )}
 

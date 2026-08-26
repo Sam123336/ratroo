@@ -73,9 +73,8 @@ export async function POST(request: Request) {
   const to = body.to?.trim();
   const region = body.region;
   if (!from || !to) return Response.json({ message: "Both from and to locations are required." }, { status: 400 });
-  if (region !== "kolkata" && region !== "bengaluru") {
-    return Response.json({ message: "Choose Kolkata or Bengaluru before planning a journey." }, { status: 400 });
-  }
+  // Bengaluru keeps its specialised engine. Every other region uses the
+  // nationwide canonical graph, including approved community taxi/auto routes.
 
   try {
     if (region === "bengaluru" && body.routeId) {

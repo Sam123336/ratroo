@@ -72,7 +72,7 @@ type Journey = {
  * A picked city still resolves through /api/location, so this changes which
  * point gets looked up, never what coverage is claimed for it.
  */
-const REGION_PICKER_ENABLED = true;
+const REGION_PICKER_ENABLED = false;
 
 /** Where a named city is looked up from. Coverage still comes from the backend. */
 const SELECTABLE_CITIES = [

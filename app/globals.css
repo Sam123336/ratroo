@@ -328,3 +328,55 @@ footer > span { color: #69716b; text-align: right; font: 600 10px/1 var(--font-g
 @media (prefers-reduced-motion: reduce) {
   .scroll-progress { display: none; }
 }
+
+/* ── The journey at a glance ──────────────────────────────────────────────
+   The step list answers "what do I do"; this answers "what is this trip",
+   which is the question a rider has first and the one a list is worst at. */
+
+.route-ribbon { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 20px 0 6px; }
+.ribbon-step { display: inline-flex; align-items: center; gap: 4px; }
+.ribbon-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px 7px 8px; border-radius: 999px; background: #f1ece2; border: 1px solid #e3dccd; font: 800 12px/1 var(--font-geist-sans), sans-serif; color: #35403a; white-space: nowrap; }
+.ribbon-chip img { width: 20px; height: 20px; object-fit: contain; }
+.ribbon-chip b { font-size: 13px; }
+.ribbon-chip em { font-style: normal; letter-spacing: -.01em; }
+/* Walking is context, not the thing to remember — it recedes so the named
+   services carry the eye. */
+.ribbon-chip.walk { background: #fffdf8; color: #7b8480; font-weight: 700; }
+.ribbon-chip.bus { background: #e8f1fe; border-color: #cfe0fb; }
+.ribbon-chip.metro, .ribbon-chip.rail, .ribbon-chip.suburban_rail { background: #f0eafe; border-color: #ded1fb; }
+.ribbon-chip.auto, .ribbon-chip.shared_auto { background: #fff4e3; border-color: #f4dcb8; }
+.ribbon-chip.ferry { background: #e2f4f8; border-color: #c6e6ee; }
+.ribbon-chip.tram { background: #fdeaf3; border-color: #f5cfe1; }
+.ribbon-link { width: 14px; height: 2px; background: #d3cbbb; border-radius: 2px; }
+
+.journey-clock { margin: 6px 0 0; color: #4c5751; font-size: 14px; }
+.journey-clock strong { font-variant-numeric: tabular-nums; }
+/* Said plainly rather than hidden: a rider who does not know these minutes are
+   travel time will read them as a departure and miss the vehicle. */
+.journey-clock.muted { color: #7b8480; font-size: 12.5px; line-height: 1.5; }
+
+@media (max-width: 620px) {
+  .route-ribbon { gap: 3px; }
+  .ribbon-chip { padding: 6px 9px 6px 7px; font-size: 11px; }
+  .ribbon-chip img { width: 17px; height: 17px; }
+  .ribbon-link { width: 9px; }
+}
+
+/* Stops are how a rider actually navigates: they can watch stops go past, but
+   they cannot watch a clock count down inside a crowded bus. Given its own
+   line rather than buried in the sentence, because it is the one instruction
+   they re-read on the vehicle. */
+.leg-stops { display: inline-flex; align-items: center; gap: 5px; margin: 6px 0 2px; padding: 4px 10px; border-radius: 999px; background: #eef4f0; color: #2c4a3c; font-size: 12px; font-weight: 650; }
+.leg-stops strong { font-variant-numeric: tabular-nums; font-size: 13px; }
+
+/* The same number on the ribbon, so the glance answers "how far" too. */
+.ribbon-chip u { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: #ffffffcc; color: #35403a; font-size: 10px; font-weight: 800; text-decoration: none; font-variant-numeric: tabular-nums; }
+
+/* The wait sits between the legs, where the rider is actually standing — its
+   own row rather than part of either vehicle, because it belongs to the gap.
+   Dashed so it reads as a pause in the journey, not another step. */
+.legs li.leg-wait { display: block; width: fit-content; margin: -8px 0 14px 52px; padding: 5px 12px; border: 1px dashed #d7cdb9; border-radius: 999px; background: #fffdf8; color: #7a6a4a; font-size: 12px; font-weight: 650; }
+/* The connector line is drawn per leg; a wait row must not sprout one. */
+.legs li.leg-wait::after { content: none; }
+
+@media (max-width: 620px) { .legs li.leg-wait { margin-left: 0; } }

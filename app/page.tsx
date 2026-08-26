@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, KeyboardEvent, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { LiveVehicle, MappedRoute, NearbyStop } from "./components/TransitMap";
@@ -29,6 +29,10 @@ type JourneyLeg = {
   arrivalTime?: string | null;
   instructions: string;
   routeId?: string;
+  /** Stops travelled on this leg. Absent on walking and hailed legs. */
+  stopCount?: number;
+  /** Minutes waiting at this leg's boarding stop. Only from published times. */
+  waitMinutes?: number;
   /** Present on the first and last legs only — how to cover that mile. */
   options?: JourneyLegOption[];
 };
@@ -183,6 +187,52 @@ const modesByRegion = {
     { icon: "F", name: "Ferry", detail: "Published ferry services", color: "cyan" },
   ],
 };
+
+/**
+ * The whole journey as one line of pictures.
+ *
+ * The step list below it is correct but it is still a list — a rider has to
+ * read four paragraphs before they know whether this trip is "one bus" or
+ * "walk, bus, change, metro, walk". This answers that in a glance, which is the
+ * first question anyone actually has, and the reason Citymapper reads faster
+ * than a timetable.
+ *
+ * Walks are collapsed to their minutes because "walk 4 min" is all a rider
+ * needs; the named service is what they have to remember.
+ */
+function RouteRibbon({ legs }: { legs: JourneyLeg[] }) {
+  if (legs.length < 2) return null;
+
+  return (
+    <div className="route-ribbon" aria-hidden="true">
+      {legs.map((leg, index) => (
+        <span key={`${leg.legNumber}-ribbon`} className="ribbon-step">
+          <span className={`ribbon-chip ${leg.mode.toLowerCase()}`}>
+            {LEG_ART[leg.mode]
+              ? <img src={LEG_ART[leg.mode]} alt="" width={20} height={20} loading="lazy" />
+              : <b>{leg.mode === "WALK" ? "\u2b21" : leg.mode.charAt(0)}</b>}
+            <em>{leg.mode === "WALK" ? `${leg.durationMinutes}m` : (leg.serviceName || modeName(leg))}</em>
+            {leg.stopCount ? <u>{leg.stopCount}</u> : null}
+          </span>
+          {index < legs.length - 1 && <i className="ribbon-link" />}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * "Leave 08:12, arrive 08:54" — the two numbers a rider plans their day around.
+ *
+ * Built only from times the operator published: a journey whose services carry
+ * no timetable says so rather than counting forward from now, which would be an
+ * invented departure dressed as a scheduled one.
+ */
+function journeyClock(legs: JourneyLeg[]): { leave: string; arrive: string } | null {
+  const leave = legs.find(leg => leg.departureTime)?.departureTime;
+  const arrive = [...legs].reverse().find(leg => leg.arrivalTime)?.arrivalTime;
+  return leave && arrive ? { leave, arrive } : null;
+}
 
 function unwrapJourney(payload: unknown): Journey {
   const body = payload as { data?: unknown; success?: boolean; message?: string };
@@ -889,6 +939,19 @@ export default function Home() {
       {journey && (
         <section className="journey-result" ref={resultRef} aria-live="polite">
           <div className="result-heading"><div><p className="eyebrow"><span /> Best route for you</p><h2>{journey.fromInput} <b>→</b> {journey.toInput}</h2><p className="result-subtitle">Follow these steps in order. Ratroo never hides a walk or change of vehicle.</p></div><div className="confidence"><strong>✓ {confidenceCopy(journey.confidenceScore)[0]}</strong><span>{confidenceCopy(journey.confidenceScore)[1]}</span></div></div>
+          <RouteRibbon legs={journey.legs} />
+          {(() => {
+            const clock = journeyClock(journey.legs);
+            return clock ? (
+              <p className="journey-clock">
+                Leave <strong>{clock.leave}</strong> · arrive <strong>{clock.arrive}</strong>
+              </p>
+            ) : (
+              <p className="journey-clock muted">
+                This operator publishes no timetable — the minutes below are travel time, not a departure.
+              </p>
+            );
+          })()}
           <div className="journey-summary">
             {journey.totalDurationMinutes > 0 && <div><small>About</small><strong>{journey.totalDurationMinutes} min</strong><span>total travel time</span></div>}
             {Number.isFinite(journey.transfersCount) && <div><small>Changes</small><strong>{journey.transfersCount === 0 ? "Direct" : journey.transfersCount}</strong><span>{journey.transfersCount === 0 ? "no vehicle change" : journey.transfersCount === 1 ? "change once" : "vehicle changes"}</span></div>}
@@ -896,7 +959,7 @@ export default function Home() {
             {journey.totalDistanceKm && journey.totalDistanceKm !== "—" && <div><small>Distance</small><strong>{journey.totalDistanceKm}</strong><span>including first and last mile</span></div>}
           </div>
           <div className="steps-heading"><h3>Your journey, step by step</h3><span>{journey.legs.length} {journey.legs.length === 1 ? "step" : "steps"}</span></div>
-          <ol className="legs">{journey.legs.map((leg, index) => <li key={`${leg.legNumber}-${leg.toName}`}><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{LEG_ART[leg.mode] ? <img src={LEG_ART[leg.mode]} alt="" width={30} height={30} loading="lazy" decoding="async" /> : leg.mode === "WALK" ? "●" : leg.mode.charAt(0)}</span><div className="leg-copy"><div className="leg-topline"><small>Step {index + 1} · {modeName(leg)}</small><b>{leg.departureTime ? `Leave ${leg.departureTime}` : `${leg.durationMinutes} min`}</b></div><strong>{legAction(leg, index, journey.legs.length)}</strong><p><span>{leg.fromName}</span><i>→</i><span>{leg.toName}</span></p>{leg.arrivalTime && <em>Expected at this stop: {leg.arrivalTime}</em>}{leg.options && leg.options.length > 1 && <div className="leg-options">{leg.options.map((option) => <span key={option.mode} className={option.recommended ? "picked" : ""}>{option.recommended && <b>Best · </b>}{LEG_ART[option.mode] && <img src={LEG_ART[option.mode]} alt="" width={18} height={18} loading="lazy" />}{option.label} · {option.durationMinutes} min</span>)}<em>First/last-mile times are estimates from distance; no fare is invented.</em></div>}</div></li>)}</ol>
+          <ol className="legs">{journey.legs.map((leg, index) => <Fragment key={`${leg.legNumber}-${leg.toName}`}>{typeof leg.waitMinutes === "number" && <li className="leg-wait">{leg.waitMinutes === 0 ? "Change straight over — no wait" : `Wait ${leg.waitMinutes} min at ${leg.fromName}`}</li>}<li><span className={`leg-icon ${leg.mode.toLowerCase()}`}>{LEG_ART[leg.mode] ? <img src={LEG_ART[leg.mode]} alt="" width={30} height={30} loading="lazy" decoding="async" /> : leg.mode === "WALK" ? "●" : leg.mode.charAt(0)}</span><div className="leg-copy"><div className="leg-topline"><small>Step {index + 1} · {modeName(leg)}</small><b>{leg.departureTime ? `Leave ${leg.departureTime}` : `${leg.durationMinutes} min`}</b></div>{leg.stopCount ? <span className="leg-stops">Stay on for <strong>{leg.stopCount}</strong> {leg.stopCount === 1 ? "stop" : "stops"}, then get off</span> : null}<strong>{legAction(leg, index, journey.legs.length)}</strong><p><span>{leg.fromName}</span><i>→</i><span>{leg.toName}</span></p>{leg.arrivalTime && <em>Expected at this stop: {leg.arrivalTime}</em>}{leg.options && leg.options.length > 1 && <div className="leg-options">{leg.options.map((option) => <span key={option.mode} className={option.recommended ? "picked" : ""}>{option.recommended && <b>Best · </b>}{LEG_ART[option.mode] && <img src={LEG_ART[option.mode]} alt="" width={18} height={18} loading="lazy" />}{option.label} · {option.durationMinutes} min</span>)}<em>First/last-mile times are estimates from distance; no fare is invented.</em></div>}</div></li></Fragment>)}</ol>
           {!!journey.alternatives?.length && <div className="alternatives"><div><h3>Other ways to go</h3><p>Choose less time or fewer changes—whatever works for you.</p></div><div className="alternative-list">{journey.alternatives.map((option, index) => <article key={`${option.totalDurationMinutes}-${index}`}><span>Option {index + 2}</span><strong>{option.totalDurationMinutes} min</strong><p>{option.transfersCount === 0 ? "Direct" : `${option.transfersCount} ${option.transfersCount === 1 ? "change" : "changes"}`} · {option.totalFare != null ? `₹${option.totalFare}${option.fareIncomplete ? "+" : ""}` : "fare not published"}</p><small>{option.legs.filter(leg => leg.routeId).map(leg => leg.serviceName || modeName(leg)).join(" → ")}</small></article>)}</div></div>}
           <details className="data-note"><summary>Why Ratroo recommends this</summary><p>{journey.confidenceBadges?.join(" · ") || "Matched from Ratroo transit data"}. Times and fares are shown only when published or clearly labelled as estimates.</p></details>
         </section>

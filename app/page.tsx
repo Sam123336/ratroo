@@ -175,6 +175,13 @@ const modesByRegion = {
     { icon: "B", name: "Bus", detail: "BMTC city services", color: "blue" },
     { icon: "M", name: "Metro", detail: "Namma Metro / BMRCL", color: "violet" },
   ],
+  india: [
+    { icon: "B", name: "Bus", detail: "Verified local and state services", color: "blue" },
+    { icon: "A", name: "Auto", detail: "Approved fixed auto and shared-taxi routes", color: "green" },
+    { icon: "M", name: "Metro", detail: "Published city metro networks", color: "violet" },
+    { icon: "R", name: "Rail", detail: "Published local rail connections", color: "green" },
+    { icon: "F", name: "Ferry", detail: "Published ferry services", color: "cyan" },
+  ],
 };
 
 function unwrapJourney(payload: unknown): Journey {
